@@ -9,10 +9,9 @@
   /* ==================== 容器 ==================== */
   DB.enemies      = [];
   DB.enemyBullets = [];
-  DB.chips        = [];      // 新增：芯片掉落物
+  DB.chips        = [];
 
-  /* ==================== 数值 ==================== */
-  const ENEMY_HP      = 30;
+  const ENEMY_HP      = DB.ENEMY_CFG.droneHp;
   const ENEMY_R       = 20;
   const FIRE_INTERVAL = 2.2;
   const BULLET_SPEED  = 260;
@@ -22,47 +21,82 @@
   const CHIP_DROP_RATE = 0.6;
   const CHIP_LIFETIME  = 14;
 
-  /* ==================== 波次 ==================== */
+  /* ==================== 波次与 Boss ==================== */
   DB.spawnWave = function (n) {
-    const count = 3 + n;
-    for (let i = 0; i < count; i++) {
+    const droneCount = 2 + Math.floor(n / 2);
+    const wormCount  = 1 + Math.floor(n / 2);
+    const shieldCount = n >= 3 ? 1 : 0; // 第 3 波开始出现盾卫
+
+    for (let i = 0; i < droneCount; i++) {
       const x = 120 + Math.random() * (W - 240);
       const y = 160 + Math.random() * 180;
       DB.enemies.push({
-        x, y, baseX: x, baseY: y,
-        seed: Math.random() * 100,
-        hp: ENEMY_HP, r: ENEMY_R,
-        fireCd: 0.8 + Math.random() * 1.6,
-        flashT: 0
+        type: 'drone', x, y, baseX: x, baseY: y,
+        seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R,
+        fireCd: 0.8 + Math.random() * 1.6, flashT: 0
       });
     }
+
+    for (let i = 0; i < wormCount; i++) {
+      const fromLeft = Math.random() > 0.5;
+      DB.enemies.push({
+        type: 'worm', x: fromLeft ? -40 : W + 40, y: CFG.GROUND_Y - 15,
+        vx: 0, hp: DB.ENEMY_CFG.wormHp, r: 22,
+        seed: Math.random() * 100, flashT: 0,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+
+    for (let i = 0; i < shieldCount; i++) {
+      const fromLeft = Math.random() > 0.5;
+      DB.enemies.push({
+        type: 'shield', x: fromLeft ? -40 : W + 40, y: CFG.GROUND_Y - 25,
+        vx: 0, hp: DB.ENEMY_CFG.shieldHp, r: 28,
+        seed: Math.random() * 100, flashT: 0,
+        facing: fromLeft ? 1 : -1
+      });
+    }
+  };
+
+  DB.spawnBoss = function () {
+    DB.boss = {
+      x: W / 2, y: 200,
+      hp: DB.BOSS_CFG.hp, maxHp: DB.BOSS_CFG.maxHp,
+      r: DB.BOSS_CFG.radius,
+      fireCd: 2.0, summonCd: 3.0, phase: 'normal', flashT: 0,
+      seed: Math.random() * 100
+    };
+    state.qte.active = false;
+    state.hp = Math.min(state.hpMax, state.hp + state.hpMax * 0.5);
+    DB.enemies.length = 0; 
   };
 
   /* ==================== 芯片生成 ==================== */
   DB.spawnChip = function (x, y) {
     const keys = Object.keys(DB.CHIP_TYPES);
     const type = keys[Math.floor(Math.random() * keys.length)];
-    DB.chips.push({
-      id: DB.nextUid(),
-      type, x, y,
-      r: 12,
-      seed: Math.random() * 6.28,
-      age: 0,
-      dead: false
-    });
+    DB.chips.push({ id: DB.nextUid(), type, x, y, r: 12, seed: Math.random() * 6.28, age: 0, dead: false });
   };
 
   function applyChip(c) {
     const mods = state.mods;
     const cfg  = DB.CHIP_TYPES[c.type];
+    const p = DB.player;
+    
+    let floatText = '', floatColor = '#ffffff';
 
-    if (c.type === 'damage') {
-      mods.damage = Math.min(0.75, mods.damage + 0.15);
-    } else if (c.type === 'grab') {
-      mods.grab = Math.min(120, mods.grab + 40);
-    } else if (c.type === 'launch') {
-      mods.launch = Math.min(0.6, mods.launch + 0.15);
+    if (c.type === 'damage') { mods.damage = Math.min(0.75, mods.damage + 0.15); floatText = '伤害 +15%'; floatColor = '#ff7a9a'; }
+    else if (c.type === 'grab') { mods.grab = Math.min(120, mods.grab + 40); floatText = '范围 +40'; floatColor = '#5ae8ff'; }
+    else if (c.type === 'launch') { mods.launch = Math.min(0.6, mods.launch + 0.15); floatText = '弹射 +15%'; floatColor = '#c08bff'; }
+    else if (c.type === 'heal') { 
+      state.hp = Math.min(state.hpMax, state.hp + 20); floatText = '+20 HP'; floatColor = '#5ee6a8';
+      state.flash = Math.max(state.flash, 0.15); DB.spawnParticles(p.x, p.y, 20, '#5ee6a8', 300);
+    } else if (c.type === 'max_hp') {
+      state.hpMax += 20; state.hp += 20; floatText = '上限 +20'; floatColor = '#ffcc00';
+      state.flash = Math.max(state.flash, 0.15); DB.spawnParticles(p.x, p.y, 30, '#ffcc00', 400);
     }
+
+    if (DB.floaters) DB.floaters.push({ text: floatText, x: p.x, y: p.y - 40, vy: -50, life: 1.2, maxLife: 1.2, color: floatColor });
 
     DB.sfx.chip();
     DB.spawnParticles(c.x, c.y, 14, cfg.color, 280);
@@ -72,195 +106,290 @@
 
   DB.updateChips = function (dt) {
     const p = DB.player;
-
     for (let i = DB.chips.length - 1; i >= 0; i--) {
       const c = DB.chips[i];
       if (c.dead) continue;
-
       c.age += dt;
-
-      const dx = p.x - c.x;
-      const dy = p.y - c.y;
-      const d  = Math.hypot(dx, dy) || 1;
-
-      // 吸附
-      if (d < 120) {
-        const pull = (1 - d / 120) * 900 * dt;
-        c.x += (dx / d) * pull;
-        c.y += (dy / d) * pull;
-      }
-
-      // 拾取
-      if (d < 24) {
-        applyChip(c);
-        c.dead = true;
-        DB.chips.splice(i, 1);
-        continue;
-      }
-
-      // 超时
-      if (c.age > CHIP_LIFETIME) {
-        DB.chips.splice(i, 1);
-      }
+      const dx = p.x - c.x, dy = p.y - c.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < 120) { const pull = (1 - d / 120) * 900 * dt; c.x += (dx / d) * pull; c.y += (dy / d) * pull; }
+      if (d < 24) { applyChip(c); c.dead = true; DB.chips.splice(i, 1); continue; }
+      if (c.age > CHIP_LIFETIME) DB.chips.splice(i, 1);
     }
   };
 
   DB.drawChips = function (ctx) {
     for (const c of DB.chips) {
       if (c.dead) continue;
-
       const cfg = DB.CHIP_TYPES[c.type];
+      if (!cfg) continue;
       const bob = Math.sin(state.t * 4 + c.seed) * 3;
-      const x = c.x;
-      const y = c.y + bob;
+      const x = c.x, y = c.y + bob;
 
-      // 外发光
       const g = ctx.createRadialGradient(x, y, 0, x, y, 22);
-      g.addColorStop(0, cfg.color + '88');
-      g.addColorStop(1, cfg.color + '00');
-      ctx.fillStyle = g;
-      ctx.fillRect(x - 22, y - 22, 44, 44);
+      g.addColorStop(0, cfg.color + '88'); g.addColorStop(1, cfg.color + '00');
+      ctx.fillStyle = g; ctx.fillRect(x - 22, y - 22, 44, 44);
 
-      // 菱形
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(state.t * 1.5 + c.seed);
-      ctx.fillStyle = cfg.color;
-      ctx.shadowColor = cfg.color;
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.moveTo(0, -10);
-      ctx.lineTo(10, 0);
-      ctx.lineTo(0, 10);
-      ctx.lineTo(-10, 0);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // 标签
-      ctx.save();
-      ctx.font = 'bold 9px ui-monospace, monospace';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = cfg.color;
-      ctx.globalAlpha = c.age > CHIP_LIFETIME - 2
-        ? (Math.sin(state.t * 20) > 0 ? 0.9 : 0.2)
-        : 0.85;
-      ctx.fillText(cfg.label, x, y + 26);
-      ctx.restore();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(state.t * 1.5 + c.seed);
+      ctx.fillStyle = cfg.color; ctx.shadowColor = cfg.color; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(10, 0); ctx.lineTo(0, 10); ctx.lineTo(-10, 0);
+      ctx.closePath(); ctx.fill(); ctx.restore();
     }
   };
 
-  /* ==================== 射击 ==================== */
-  function fireAtPlayer(e) {
-    const dx = DB.player.x - e.x;
-    const dy = DB.player.y - e.y;
-    const d  = Math.hypot(dx, dy) || 1;
-    DB.enemyBullets.push({
-      x: e.x, y: e.y,
-      vx: (dx / d) * BULLET_SPEED,
-      vy: (dy / d) * BULLET_SPEED,
-      r: BULLET_R, life: BULLET_LIFE
-    });
-  }
-
-  /* ==================== 玩家受伤 ==================== */
+  /* ==================== 伤害与击杀 ==================== */
   function damagePlayer(dmg, px, py) {
-    if (state.gameOver) return;
+    if (state.gameOver || state.scene !== 'playing') return;
     state.hp = Math.max(0, state.hp - dmg);
     state.damageFlash = Math.max(state.damageFlash, 0.5);
     state.shake   = Math.min(state.shake + 10, 30);
     state.hitstop = Math.max(state.hitstop, 0.05);
     DB.spawnParticles(px, py, 12, '#ff5a7a', 300);
     DB.sfx.hurt();
+    
+    // 受伤断连击
+    state.combo = 0;
   }
 
-  /* ==================== 击杀 ==================== */
-  function killEnemy(index) {
+  function killEnemy(index, isQuake) {
     const e = DB.enemies[index];
     if (!e) return;
-
-    DB.spawnParticles(e.x, e.y, 24, '#ff7a9a', 460);
+    const color = e.type === 'worm' ? '#5ee6a8' : (e.type === 'shield' ? '#a88bff' : '#ff7a9a');
+    DB.spawnParticles(e.x, e.y, 24, color, 460);
     DB.spawnParticles(e.x, e.y, 10, '#ffffff', 620);
     state.energy = Math.min(state.energyMax, state.energy + 8);
     state.shake  = Math.min(state.shake + 5, 24);
-
-    if (Math.random() < CHIP_DROP_RATE) {
-      DB.spawnChip(e.x, e.y);
-    }
-
+    if (Math.random() < CHIP_DROP_RATE) DB.spawnChip(e.x, e.y);
     DB.sfx.hit();
+
+    // 连击与得分
+    state.combo++;
+    state.comboTimer = 3.0;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+    state.score += 100 * state.combo;
+
     DB.enemies.splice(index, 1);
   }
 
   /* ==================== 每帧更新 ==================== */
   DB.updateEnemies = function (dt) {
-    /* --- 敌人漂移 / 射击 --- */
-    for (const e of DB.enemies) {
-      e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
-      e.y = e.baseY + Math.sin(state.t * 1.3 + e.seed * 2) * 18;
+    const p = DB.player;
 
-      if (e.flashT > 0) e.flashT -= dt;
+    /* --- 1. Boss AI --- */
+    if (DB.boss) {
+      const b = DB.boss;
+      if (b.flashT > 0) b.flashT -= dt;
 
-      e.fireCd -= dt;
-      if (e.fireCd <= 0) {
-        e.fireCd = FIRE_INTERVAL + Math.random() * 0.6;
-        fireAtPlayer(e);
+      if (b.phase === 'normal') {
+        b.x = W / 2 + Math.sin(state.t * 0.5) * 100;
+        b.y = 200 + Math.sin(state.t * 0.8) * 30;
+        b.fireCd -= dt;
+        if (b.fireCd <= 0) {
+          b.fireCd = DB.BOSS_CFG.fireInterval;
+          const count = 8; 
+          for (let i = 0; i < count; i++) {
+            const a = (i / count) * Math.PI * 2 + state.t;
+            DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 8, life: 8 });
+          }
+          DB.sfx.hurt();
+        }
+        b.summonCd -= dt;
+        if (b.summonCd <= 0) {
+          b.summonCd = DB.BOSS_CFG.summonInterval;
+          DB.enemies.push({ type: 'drone', x: b.x, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R, fireCd: 1.0, flashT: 0 });
+        }
+      } 
+      else if (b.phase === 'paralyzed') {
+        state.qte.active = true;
+        state.qte.timer -= dt;
+        if (state.qte.timer <= 0) {
+          state.qte.active = false;
+          b.phase = 'normal';
+          b.hp = b.maxHp * 0.1;
+          state.shake = 30;
+          DB.sfx.error();
+        }
       }
     }
 
-    /* --- 敌方子弹 --- */
+    /* --- 2. 敌人 AI --- */
+    for (let i = DB.enemies.length - 1; i >= 0; i--) {
+      const e = DB.enemies[i];
+      if (e.flashT > 0) e.flashT -= dt;
+
+      if (e.type === 'drone') {
+        e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
+        e.y = e.baseY + Math.sin(state.t * 1.3 + e.seed * 2) * 18;
+        e.fireCd -= dt;
+        if (e.fireCd <= 0) {
+          e.fireCd = FIRE_INTERVAL + Math.random() * 0.6;
+          const dx = p.x - e.x, dy = p.y - e.y;
+          const d = Math.hypot(dx, dy) || 1;
+          DB.enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * BULLET_SPEED, vy: (dy / d) * BULLET_SPEED, r: BULLET_R, life: BULLET_LIFE });
+        }
+      } 
+      else if (e.type === 'worm') {
+        const dx = p.x - e.x, dy = p.y - e.y;
+        const d = Math.hypot(dx, dy) || 1;
+        e.phase += dt * 15;
+        const speed = DB.ENEMY_CFG.wormSpeed * (1 + Math.sin(e.phase) * 0.15);
+        e.x += (dx / d) * speed * dt;
+        e.y += (dy / d) * speed * dt;
+        if (d < e.r + p.r) { damagePlayer(12, e.x, e.y); killEnemy(i); }
+      }
+      else if (e.type === 'shield') {
+        const dx = p.x - e.x, dy = p.y - e.y;
+        const d = Math.hypot(dx, dy) || 1;
+        e.facing = dx > 0 ? 1 : -1; // 面向玩家
+        e.x += (dx / d) * 60 * dt;
+        e.y += (dy / d) * 60 * dt;
+        if (d < e.r + p.r) damagePlayer(15, e.x, e.y);
+      }
+    }
+
+    /* --- 3. 敌方子弹 --- */
     for (let i = DB.enemyBullets.length - 1; i >= 0; i--) {
       const b = DB.enemyBullets[i];
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.life -= dt;
-
-      const dx = b.x - DB.player.x;
-      const dy = b.y - DB.player.y;
-      if (dx * dx + dy * dy < (b.r + DB.player.r) * (b.r + DB.player.r)) {
+      b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      const dx = b.x - p.x, dy = b.y - p.y;
+      if (dx * dx + dy * dy < (b.r + p.r) * (b.r + p.r)) {
         damagePlayer(BULLET_DMG, b.x, b.y);
         DB.enemyBullets.splice(i, 1);
         continue;
       }
-
       if (b.life <= 0 || b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
         DB.enemyBullets.splice(i, 1);
       }
     }
 
-    /* --- 武器 vs 敌人（命中即碎） --- */
+    /* --- 4. 污染武器 --- */
+    for (const e of DB.enemies) {
+      for (const w of DB.weapons) {
+        if (w.dead || w.held || w.thrown || w.corrupted || w.warning > 0) continue;
+        const dx = w.x - e.x, dy = w.y - e.y;
+        const radius = w.r + e.r + 10;
+        if (dx * dx + dy * dy < radius * radius) {
+          w.corrupted = true;
+          DB.spawnParticles(w.x, w.y, 8, '#ff5a7a', 200);
+        }
+      }
+    }
+
+    /* --- 5. 武器 vs Boss & 小怪 --- */
     for (let wi = DB.weapons.length - 1; wi >= 0; wi--) {
       const w = DB.weapons[wi];
       if (w.dead || w.held || !w.thrown) continue;
-
       const speed = Math.hypot(w.vx, w.vy);
       if (speed < 180) continue;
 
+      let hit = false;
+
+      // 砸 Boss
+      if (DB.boss && DB.boss.phase === 'normal') {
+        const b = DB.boss;
+        const dx = w.x - b.x, dy = w.y - b.y;
+        if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
+          const power = DB.clamp(speed / 700, 0.5, 2.4);
+          b.hp -= w.def.damage * power * (1 + state.mods.damage);
+          b.flashT = 0.1;
+          state.hitstop = Math.max(state.hitstop, 0.05);
+          state.shake = Math.min(state.shake + 5, 22);
+          DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
+          DB.sfx.hit();
+          DB.removeWeapon(w);
+          hit = true;
+
+          if (w.def.effect === 'earthquake') {
+             triggerQuake(b.x, b.y, w.def.damage * (1 + state.mods.damage));
+          }
+
+          if (b.hp <= 0) {
+            b.hp = 0;
+            b.phase = 'paralyzed';
+            state.qte.active = true;
+            state.qte.timer = 8.0;
+            state.qte.inputIndex = 0;
+            let seq = "";
+            for(let i=0; i<6; i++) seq += Math.floor(Math.random() * 10);
+            state.qte.sequence = seq;
+            state.energy = state.energyMax;
+            state.flash = 0.5;
+            state.hitstop = 0.15;
+          }
+        }
+      }
+
+      if (hit) continue;
+
+      // 砸小怪
       for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
         const e = DB.enemies[ei];
-        const dx = w.x - e.x;
-        const dy = w.y - e.y;
+        const dx = w.x - e.x, dy = w.y - e.y;
         if (dx * dx + dy * dy < (w.r + e.r) * (w.r + e.r)) {
-          const power = DB.clamp(speed / 700, 0.5, 2.4);
-          const dmg = w.def.damage * power * (1 + state.mods.damage);
-          e.hp -= dmg;
-          e.flashT = 0.12;
+          
+          // 盾卫免伤判定
+          if (e.type === 'shield') {
+            const isFrontal = (w.vx * e.facing < 0);
+            if (isFrontal) {
+               DB.spawnParticles(w.x, w.y, 15, '#ffffff', 400);
+               state.hitstop = Math.max(state.hitstop, 0.06);
+               state.shake = Math.min(state.shake + 4, 20);
+               DB.sfx.error();
+               DB.removeWeapon(w);
+               break; // 被挡住，不再往下执行扣血
+            }
+          }
 
+          const power = DB.clamp(speed / 700, 0.5, 2.4);
+          const finalDmg = w.def.damage * power * (1 + state.mods.damage);
+          e.hp -= finalDmg;
+          e.flashT = 0.12;
           state.hitstop = Math.max(state.hitstop, 0.045);
           state.shake   = Math.min(state.shake + 4, 22);
-
           DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);
-          DB.spawnParticles(w.x, w.y, 8,  '#5ae8ff', 320);
           DB.sfx.hit();
+          
+          // 武器特效
+          if (w.def.effect === 'pull') {
+            const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
+            const pd = Math.hypot(pdx, pdy) || 1;
+            const pullDist = 180; // 拉拽距离
+
+            // 1. 如果是浮游炮，必须把它的原点(baseX/baseY)一起拉过来
+            if (e.type === 'drone') {
+               e.baseX += (pdx / pd) * pullDist;
+               e.baseY += (pdy / pd) * pullDist;
+               // 限制不能拉出屏幕外
+               e.baseX = DB.clamp(e.baseX, 60, W - 60);
+               e.baseY = DB.clamp(e.baseY, 60, H - 100);
+            }
+            
+            // 2. 改变当前坐标
+            e.x += (pdx / pd) * pullDist; 
+            e.y += (pdy / pd) * pullDist;
+
+            // 3. 强烈视觉反馈：一条从敌人到玩家的能量连线 + 大量火花
+            for (let k = 0; k < 10; k++) {
+              const t = k / 10;
+              DB.particles.push({
+                x: e.x + (DB.player.x - e.x) * t,
+                y: e.y + (DB.player.y - e.y) * t,
+                vx: (Math.random()-0.5)*100, vy: (Math.random()-0.5)*100,
+                life: 0.4, maxLife: 0.4, size: 4,
+                color: '#5ae8ff', spin: 0, rot: 0
+              });
+            }
+
+            // 4. 极致的打击感反馈
+            state.hitstop = Math.max(state.hitstop, 0.08); // 顿帧
+            state.shake = 26; // 剧烈震动
+            state.flash = Math.max(state.flash, 0.15); // 轻微闪白
+            DB.sfx.error(); // 用警报音效代表牵引
+          } else if (w.def.effect === 'earthquake') {
+            triggerQuake(e.x, e.y, finalDmg);
+          }
 
           DB.removeWeapon(w);
-
           if (e.hp <= 0) killEnemy(ei);
           break;
         }
@@ -268,82 +397,109 @@
     }
   };
 
-  /* ==================== 绘制：敌人 ==================== */
+  /* ==================== 绘制 ==================== */
   DB.drawEnemies = function (ctx) {
-    for (const e of DB.enemies) {
-      const w = 44, h = 34;
-      const x = e.x - w / 2;
-      const y = e.y - h / 2;
-      const flash = e.flashT > 0;
+    // 画 Boss
+    if (DB.boss) {
+      const b = DB.boss;
+      const flash = b.flashT > 0;
+      ctx.save();
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2);
+      g.addColorStop(0, flash ? 'rgba(255,255,255,0.8)' : 'rgba(120, 90, 255, 0.4)');
+      g.addColorStop(1, 'rgba(120, 90, 255, 0)');
+      ctx.fillStyle = g; ctx.fillRect(b.x - b.r * 2, b.y - b.r * 2, b.r * 4, b.r * 4);
 
+      ctx.fillStyle = b.phase === 'paralyzed' ? '#ffcc00' : '#0a0a2a';
+      ctx.strokeStyle = b.phase === 'paralyzed' ? '#ffffff' : '#5ae8ff';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+      ctx.fillStyle = b.phase === 'paralyzed' ? '#000000' : '#5ae8ff';
+      ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(b.phase === 'paralyzed' ? 'SYSTEM HALT' : ':(', b.x, b.y + 8);
+      ctx.restore();
+    }
+
+    // 画小怪
+    for (const e of DB.enemies) {
+      const flash = e.flashT > 0;
       ctx.save();
 
-      const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 40);
-      g.addColorStop(0, flash ? 'rgba(255,255,255,.7)' : 'rgba(255, 90, 120, .35)');
-      g.addColorStop(1, 'rgba(255, 90, 120, 0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(e.x - 40, e.y - 40, 80, 80);
-
-      ctx.fillStyle = flash ? '#ffffff' : 'rgba(30, 12, 24, 0.95)';
-      ctx.strokeStyle = flash ? '#ffffff' : 'rgba(255, 90, 120, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = flash ? 'rgba(255,255,255,.3)' : 'rgba(255, 90, 120, 0.25)';
-      ctx.fillRect(x + 2, y + 2, w - 4, 9);
-
-      ctx.strokeStyle = flash ? '#ff2a4a' : 'rgba(255, 120, 150, 0.95)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(x + w - 11, y + 4);
-      ctx.lineTo(x + w - 5,  y + 10);
-      ctx.moveTo(x + w - 5,  y + 4);
-      ctx.lineTo(x + w - 11, y + 10);
-      ctx.stroke();
-
-      ctx.strokeStyle = flash ? 'rgba(255,255,255,.6)' : 'rgba(255, 120, 150, 0.35)';
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(x + 6, y + 20);
-      ctx.lineTo(x + w - 6, y + 20);
-      ctx.moveTo(x + 6, y + 25);
-      ctx.lineTo(x + w - 14, y + 25);
-      ctx.stroke();
-
+      if (e.type === 'drone') {
+        const w = 44, h = 34, x = e.x - w / 2, y = e.y - h / 2;
+        const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 40);
+        g.addColorStop(0, flash ? 'rgba(255,255,255,.7)' : 'rgba(255, 90, 120, .35)');
+        g.addColorStop(1, 'rgba(255, 90, 120, 0)');
+        ctx.fillStyle = g; ctx.fillRect(e.x - 40, e.y - 40, 80, 80);
+        ctx.fillStyle = flash ? '#ffffff' : 'rgba(30, 12, 24, 0.95)';
+        ctx.strokeStyle = flash ? '#ffffff' : 'rgba(255, 90, 120, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = flash ? 'rgba(255,255,255,.3)' : 'rgba(255, 90, 120, 0.25)';
+        ctx.fillRect(x + 2, y + 2, w - 4, 9);
+      } 
+      else if (e.type === 'worm') {
+        const color = flash ? '#ffffff' : '#5ee6a8';
+        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 15;
+        for (let i = 0; i < 3; i++) {
+          const offset = Math.sin(e.phase + i * 1.5) * 8;
+          const cx = e.x - (i * 14), cy = e.y + offset;
+          ctx.beginPath(); ctx.arc(cx, cy, e.r * (1 - i * 0.25), 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = '#ff5a7a';
+        ctx.beginPath(); ctx.arc(e.x + 6, e.y - 4, 3, 0, Math.PI * 2); ctx.fill();
+      }
+      else if (e.type === 'shield') {
+        // 身体
+        ctx.fillStyle = flash ? '#ffffff' : '#1a1a30';
+        ctx.strokeStyle = '#a88bff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // 盾牌
+        const shieldX = e.x + e.facing * 25;
+        ctx.fillStyle = '#5ae8ff';
+        ctx.fillRect(shieldX - 5, e.y - 30, 10, 60);
+      }
       ctx.restore();
     }
   };
 
-  /* ==================== 绘制：敌方子弹 ==================== */
   DB.drawEnemyBullets = function (ctx) {
     for (const b of DB.enemyBullets) {
       ctx.save();
-
-      const tx = b.x - b.vx * 0.03;
-      const ty = b.y - b.vy * 0.03;
+      const tx = b.x - b.vx * 0.03, ty = b.y - b.vy * 0.03;
       const grad = ctx.createLinearGradient(tx, ty, b.x, b.y);
-      grad.addColorStop(0, 'rgba(255, 60, 90, 0)');
-      grad.addColorStop(1, 'rgba(255, 90, 120, 0.85)');
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = b.r;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-
-      ctx.shadowColor = '#ff5a7a';
-      ctx.shadowBlur = 14;
+      grad.addColorStop(0, 'rgba(255, 60, 90, 0)'); grad.addColorStop(1, 'rgba(255, 90, 120, 0.85)');
+      ctx.strokeStyle = grad; ctx.lineWidth = b.r; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.shadowColor = '#ff5a7a'; ctx.shadowBlur = 14;
       ctx.fillStyle = '#ffd8e2';
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.6, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
   };
+
+  // 全局地震特效
+  function triggerQuake(cx, cy, dmg) {
+    state.shake = 35; state.hitstop = 0.08;
+    state.flash = Math.max(state.flash, 0.3);
+    DB.sfx.error();
+
+    for (let i = DB.enemies.length - 1; i >= 0; i--) {
+      const e = DB.enemies[i];
+      e.hp -= dmg;
+      e.flashT = 0.15;
+      if (e.hp <= 0) killEnemy(i, true);
+    }
+
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 600 + Math.random() * 400;
+      DB.particles.push({
+        x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 0.6, maxLife: 0.6, size: 5 + Math.random() * 5,
+        color: '#ffcc00', spin: 0, rot: a
+      });
+    }
+  }
 
 })(window.DB);

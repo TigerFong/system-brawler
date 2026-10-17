@@ -52,7 +52,7 @@
       hitCd: 0,
       age: 0,
       el: null,
-      anchorX: 0,          // 弹弓锚点（抓取时记录）
+      anchorX: 0,
       anchorY: 0
     };
 
@@ -92,7 +92,7 @@
     if (DB.heldWeapon === w) DB.heldWeapon = null;
   };
 
-  /* ---------- 抓取（记录锚点） ---------- */
+  /* ---------- 抓取 ---------- */
   DB.tryGrab = function (mx, my) {
     let best = null;
     let bestD = Infinity;
@@ -115,25 +115,36 @@
       return;
     }
 
+    if (best.corrupted) {
+      DB.spawnParticles(best.x, best.y, 30, '#ff5a7a', 500);
+      DB.spawnParticles(best.x, best.y, 15, '#ffffff', 600);
+      state.hp = Math.max(0, state.hp - 15);
+      state.damageFlash = Math.max(state.damageFlash, 0.6);
+      state.shake = 26;
+      state.hitstop = 0.08;
+      DB.sfx.hurt();
+      DB.removeWeapon(best);
+      return;
+    }
+
     best.held   = true;
     best.thrown = false;
     best.vx = 0;
     best.vy = 0;
     best.rotV = 0;
-    best.anchorX = best.x;   // ← 关键：抓住瞬间的位置成为锚点
+    best.anchorX = best.x;
     best.anchorY = best.y;
     if (best.el) best.el.classList.add('held');
     DB.sfx.grab();
     DB.heldWeapon = best;
   };
 
-  /* ---------- 释放（弹弓） ---------- */
+  /* ---------- 释放 ---------- */
   DB.releaseThrow = function () {
     const w = DB.heldWeapon;
     if (!w) return;
 
     const SL = CFG.SLINGSHOT;
-
     const dx = w.x - w.anchorX;
     const dy = w.y - w.anchorY;
     const pullDist = Math.hypot(dx, dy);
@@ -142,18 +153,13 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
-    /* --- 轻放：拉伸不足，回到悬浮 --- */
     if (pullDist < SL.MIN_PULL) {
       w.thrown = false;
-      w.vx = 0;
-      w.vy = 0;
-      w.rotV = 0;
-      w.anchorX = 0;
-      w.anchorY = 0;
+      w.vx = 0; w.vy = 0; w.rotV = 0;
+      w.anchorX = 0; w.anchorY = 0;
       return;
     }
 
-    /* --- 弹弓：方向 = 武器指向锚点（被拉离方向的反向） --- */
     const inv  = 1 / pullDist;
     const dirX = -dx * inv;
     const dirY = -dy * inv;
@@ -168,7 +174,6 @@
     w.vy = dirY * speed;
     w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14);
 
-    /* --- 反馈 --- */
     if (t > 0.15) {
       state.shake = Math.min(state.shake + 2 + t * 8, 22);
       DB.spawnParticles(w.x, w.y, Math.floor(4 + t * 14), '#8fd8ff', 200 + t * 300);
@@ -183,6 +188,37 @@
     w.anchorY = 0;
   };
 
+  /* ---------- 地震特效 ---------- */
+  function triggerQuake(cx, cy, dmg) {
+    state.shake = 35;
+    state.hitstop = 0.08;
+    state.flash = Math.max(state.flash, 0.3);
+    DB.sfx.error();
+
+    for (let i = DB.enemies.length - 1; i >= 0; i--) {
+      const e = DB.enemies[i];
+      e.hp -= dmg;
+      e.flashT = 0.15;
+      if (e.hp <= 0) {
+        const color = e.type === 'worm' ? '#5ee6a8' : '#ff7a9a';
+        DB.spawnParticles(e.x, e.y, 24, color, 460);
+        state.energy = Math.min(state.energyMax, state.energy + 8);
+        DB.enemies.splice(i, 1);
+      }
+    }
+
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 600 + Math.random() * 400;
+      DB.particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 0.6, maxLife: 0.6, size: 5 + Math.random() * 5,
+        color: '#ffcc00', spin: 0, rot: a
+      });
+    }
+  }
+
   /* ---------- 物理更新 ---------- */
   DB.updateWeapons = function (dt) {
     const arr = DB.weapons;
@@ -192,7 +228,6 @@
       const w = arr[i];
       if (w.dead) continue;
 
-      /* --- 预警阶段 --- */
       if (w.warning > 0) {
         w.warning -= dt;
         if (w.warning <= 0) {
@@ -203,7 +238,6 @@
         continue;
       }
 
-      /* --- 超时销毁 --- */
       w.age += dt;
       if (w.age > CFG.WEAPON_LIFETIME) {
         DB.spawnParticles(w.x, w.y, 8, '#6a7fa8', 140);
@@ -213,11 +247,8 @@
 
       if (w.hitCd > 0) w.hitCd -= dt;
 
-      /* --- 被持有：皮兜拉拽 --- */
       if (w.held) {
         const mouse = DB.mouse;
-
-        // 目标位置受锚点 MAX_PULL 半径限制，像皮兜拉到底
         let tx = mouse.x;
         let ty = mouse.y;
         const ddx = tx - w.anchorX;
@@ -233,10 +264,8 @@
         w.x += (tx - w.x) * k;
         w.y += (ty - w.y) * k;
         w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
-        w.vx = 0;
-        w.vy = 0;
+        w.vx = 0; w.vy = 0;
 
-        // 满张力微抖动
         const pull = Math.hypot(w.x - w.anchorX, w.y - w.anchorY);
         if (pull > SL.MAX_PULL * 0.7) {
           const jitter = (pull / SL.MAX_PULL) * 1.6;
@@ -244,7 +273,6 @@
           w.y += (Math.random() - 0.5) * jitter;
         }
       }
-      /* --- 悬浮 --- */
       else if (!w.thrown) {
         const p = DB.player;
         const dx = p.x - w.x;
@@ -256,7 +284,6 @@
           w.y += (dy / d) * pull;
         }
       }
-      /* --- 飞行物理 --- */
       else {
         w.vy += CFG.GRAVITY * dt;
         w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
@@ -265,7 +292,6 @@
         w.y += w.vy * dt;
         w.rot += w.rotV * dt;
 
-        // 地面
         const floorY = CFG.GROUND_Y - w.def.h * 0.32;
         if (w.y > floorY) {
           w.y = floorY;
@@ -284,14 +310,24 @@
           if (Math.abs(w.rotV) < 0.6) w.rotV = 0;
         }
 
-        // 左右墙 / 上边界
         if (w.x < w.r)          { w.x = w.r;          w.vx =  Math.abs(w.vx) * CFG.WALL_BOUNCE; }
         if (w.x > W - w.r)      { w.x = W - w.r;      w.vx = -Math.abs(w.vx) * CFG.WALL_BOUNCE; }
         if (w.y < CFG.PLAY_TOP) { w.y = CFG.PLAY_TOP; w.vy =  Math.abs(w.vy) * CFG.WALL_BOUNCE; }
       }
 
-      /* --- 生命周期视觉 --- */
-      if (w.el) {
+      /* --- 污染状态视觉 --- */
+      if (w.corrupted && w.el) {
+        w.el.style.borderColor = '#ff5a7a';
+        w.el.style.color = '#ff5a7a';
+        w.el.style.background = 'linear-gradient(135deg, rgba(100, 20, 30, 0.95), rgba(40, 10, 10, 0.98))';
+        w.el.style.textShadow = '0 0 8px rgba(255, 90, 122, 0.8)';
+        w.el.style.opacity = (Math.sin(state.t * 30) > 0) ? 1 : 0.5;
+        if (w.el.textContent !== '⚠ ERROR') w.el.textContent = '⚠ ERROR';
+      } else if (w.el && !w.corrupted) {
+        w.el.style.opacity = 1; 
+      }
+
+      if (w.el && !w.corrupted) {
         if (w.age > CFG.WEAPON_LIFETIME - 2) {
           w.el.style.opacity = (Math.sin(state.t * 26) > 0) ? 1 : 0.25;
         } else {
@@ -308,9 +344,7 @@
     for (const w of DB.weapons) {
       if (w.dead || w.warning <= 0) continue;
 
-      const k = 1 - w.warning / CFG.SPAWN_WARN; // 0 -> 1 (进度)
-      
-      // 最后 0.1 秒快速闪烁提示
+      const k = 1 - w.warning / CFG.SPAWN_WARN;
       let alpha = 0.4 + k * 0.6;
       if (w.warning < 0.1) {
         alpha = (Math.sin(state.t * 50) > 0) ? 1 : 0.3;
@@ -319,37 +353,26 @@
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // 1. 更亮的光柱
       const grad = ctx.createLinearGradient(0, w.y - 200, 0, w.y + 20);
       grad.addColorStop(0, 'rgba(90, 240, 255, 0)');
       grad.addColorStop(0.8, 'rgba(90, 240, 255, 0.4)');
-      grad.addColorStop(1, 'rgba(140, 250, 255, 1.0)'); // 底部最亮
+      grad.addColorStop(1, 'rgba(140, 250, 255, 1.0)');
       ctx.fillStyle = grad;
-      ctx.fillRect(w.x - 6, w.y - 200, 12, 220); // 加宽光柱
+      ctx.fillRect(w.x - 6, w.y - 200, 12, 220);
 
-      // 2. 地面上的多层扩散圆环
-      // 外圈：固定的最大警示范围
       ctx.strokeStyle = 'rgba(140, 250, 255, 0.8)';
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(w.x, w.y, 40, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(w.x, w.y, 40, 0, Math.PI * 2); ctx.stroke();
 
-      // 内圈：由大到小收缩
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(w.x, w.y, 40 - k * 30, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(w.x, w.y, 40 - k * 30, 0, Math.PI * 2); ctx.stroke();
 
-      // 3. 落点中心的十字光标
       ctx.strokeStyle = 'rgba(140, 250, 255, 0.9)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(w.x - 10, w.y);
-      ctx.lineTo(w.x + 10, w.y);
-      ctx.moveTo(w.x, w.y - 10);
-      ctx.lineTo(w.x, w.y + 10);
+      ctx.moveTo(w.x - 10, w.y); ctx.lineTo(w.x + 10, w.y);
+      ctx.moveTo(w.x, w.y - 10); ctx.lineTo(w.x, w.y + 10);
       ctx.stroke();
 
       ctx.restore();
@@ -362,42 +385,29 @@
     if (!w) return;
 
     const SL = CFG.SLINGSHOT;
-    const ax = w.anchorX;
-    const ay = w.anchorY;
-    const bx = w.x;
-    const by = w.y;
+    const ax = w.anchorX, ay = w.anchorY;
+    const bx = w.x, by = w.y;
 
-    const dx = bx - ax;
-    const dy = by - ay;
+    const dx = bx - ax, dy = by - ay;
     const pullDist = Math.hypot(dx, dy);
-
     if (pullDist < 4) return;
 
     const t = DB.clamp(pullDist / SL.MAX_PULL, 0, 1);
 
-    /* --- 颜色：青蓝 → 白 → 橙红 --- */
     let r, g, b;
     if (t < 0.5) {
       const k = t / 0.5;
-      r = 90  + (255 - 90)  * k;
-      g = 240 + (255 - 240) * k;
-      b = 255;
+      r = 90 + (255 - 90) * k; g = 240 + (255 - 240) * k; b = 255;
     } else {
       const k = (t - 0.5) / 0.5;
-      r = 255;
-      g = 255 + (120 - 255) * k;
-      b = 255 + (60  - 255) * k;
+      r = 255; g = 255 + (120 - 255) * k; b = 255 + (60 - 255) * k;
     }
 
     const color = `rgb(${r|0}, ${g|0}, ${b|0})`;
     const glow  = `rgba(${r|0}, ${g|0}, ${b|0}, 0.7)`;
-
-    /* --- 皮筋弯曲方向（垂直于拉伸） --- */
-    const nx = -dy / pullDist;
-    const ny =  dx / pullDist;
+    const nx = -dy / pullDist, ny = dx / pullDist;
     const sag = Math.min(26, pullDist * 0.18) * (0.6 + Math.sin(state.t * 18) * 0.4);
 
-    /* --- 两条皮筋（上下） --- */
     for (let side = -1; side <= 1; side += 2) {
       const midX = (ax + bx) / 2 + nx * sag * side;
       const midY = (ay + by) / 2 + ny * sag * side;
@@ -408,45 +418,29 @@
       ctx.shadowBlur  = 10 + t * 18;
       ctx.lineWidth   = 2.2 + (1 - t) * 1.6;
       ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.quadraticCurveTo(midX, midY, bx, by);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(midX, midY, bx, by); ctx.stroke();
       ctx.restore();
     }
 
-    /* --- 满张力火花 --- */
     if (t > 0.7) {
       const sparks = Math.floor((t - 0.7) / 0.3 * 6);
       for (let i = 0; i < sparks; i++) {
         const p  = Math.random();
         const sx = ax + dx * p + nx * (Math.random() - 0.5) * 18;
         const sy = ay + dy * p + ny * (Math.random() - 0.5) * 18;
-        ctx.save();
-        ctx.globalAlpha = 0.8;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(sx - 1, sy - 1, 2, 2);
-        ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.8; ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - 1, sy - 1, 2, 2); ctx.restore();
       }
     }
 
-    /* --- 弹射方向预览 --- */
     if (pullDist > SL.MIN_PULL * 0.6) {
-      const dirX = -dx / pullDist;
-      const dirY = -dy / pullDist;
+      const dirX = -dx / pullDist, dirY = -dy / pullDist;
       const len  = 60 + t * 120;
-      const ex = bx + dirX * len;
-      const ey = by + dirY * len;
+      const ex = bx + dirX * len, ey = by + dirY * len;
 
       ctx.save();
       ctx.strokeStyle = `rgba(${r|0}, ${g|0}, ${b|0}, ${0.35 + t * 0.5})`;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 6]);
-      ctx.lineDashOffset = -state.t * 40;
-      ctx.beginPath();
-      ctx.moveTo(bx + dirX * 22, by + dirY * 22);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
+      ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.lineDashOffset = -state.t * 40;
+      ctx.beginPath(); ctx.moveTo(bx + dirX * 22, by + dirY * 22); ctx.lineTo(ex, ey); ctx.stroke();
       ctx.restore();
     }
   };

@@ -24,33 +24,47 @@ window.DB = window.DB || {};
     HP_PIPS: 5,
     CPS: 42,
 
-    // ============ 弹弓手感（防守方） ============
     SLINGSHOT: {
-      MAX_PULL: 240,        // 最大有效拉伸距离（皮兜拉到底）
-      MIN_PULL: 34,         // 低于此拉伸视为轻放，不弹射
-      MIN_LAUNCH: 420,      // 最小弹射速度
-      MAX_LAUNCH: 2600,     // 最大弹射速度
-      FULL_TENSION: 0.92    // 拉伸达到 MAX_PULL 的此比例即视为满张力
+      MAX_PULL: 240,
+      MIN_PULL: 34,
+      MIN_LAUNCH: 420,
+      MAX_LAUNCH: 2600,
+      FULL_TENSION: 0.92
     }
   };
 
   DB.WEAPON_TYPES = {
     light_dart:  { label: '⚡ 杀毒探针',   w: 100, h: 34, r: 24, damage: 10 },
     stun_chip:   { label: '🛑 阻断芯片',   w: 100, h: 34, r: 26, damage: 13 },
-    fire_shield: { label: '🛡️ 防火墙模块', w: 116, h: 38, r: 28, damage: 19 }
+    fire_shield: { label: '🛡️ 防火墙模块', w: 116, h: 38, r: 28, damage: 19 },
+    link:        { label: '🔗 数据牵引',   w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
+    gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
   };
 
-    /* ---------- 芯片配置 ---------- */
+  DB.ENEMY_CFG = {
+    droneHp: 30,
+    wormHp: 45,
+    shieldHp: 80,
+    wormSpeed: 150
+  };
+
   DB.CHIP_TYPES = {
     damage: { label: 'DMG+', color: '#ff7a9a', desc: '武器伤害 +15%' },
     grab:   { label: 'RNG+', color: '#5ae8ff', desc: '抓取范围 +40' },
-    launch: { label: 'SPD+', color: '#c08bff', desc: '弹射速度 +15%' }
+    launch: { label: 'SPD+', color: '#c08bff', desc: '弹射速度 +15%' },
+    heal:   { label: 'HP+',  color: '#5ee6a8', desc: '恢复 20 点健康度' },
+    max_hp: { label: 'MAX+', color: '#ffcc00', desc: '生命上限 +20 (并恢复)' }
   };
 
-  DB.clamp = function (v, lo, hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
+  DB.BOSS_CFG = {
+    hp: 400,              
+    maxHp: 400,
+    radius: 60,
+    fireInterval: 3.0,    
+    summonInterval: 10.0  
   };
 
+  DB.clamp = function (v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
   DB.circleRectHit = function (cx, cy, cr, rx, ry, rw, rh) {
     const nx = Math.max(rx, Math.min(cx, rx + rw));
     const ny = Math.max(ry, Math.min(cy, ry + rh));

@@ -8,11 +8,11 @@
   /* ==================== 终端 ==================== */
   const SNIPPETS = [
     { code: 'sys.extract("AntivirusDart", { dmg: 10 });',   type: 'light_dart' },
-    { code: 'dom.mount(block_chip);',                       type: 'light_dart' },
+    { code: 'link.pull(target, { force: 1.0 });',           type: 'link' },
     { code: 'initStunProtocol("0x7F");',                    type: 'stun_chip'  },
-    { code: 'input.bind("WASD", player.dodge);',            type: 'stun_chip'  },
     { code: 'shield.init({ radius: 360, dmg: 19 });',       type: 'fire_shield'    },
-    { code: 'if (virus.hp <= 0) system.purge();',           type: 'fire_shield'    },
+    { code: 'triggerEarthquake({ dmg: 25 });',              type: 'gravity' },
+    { code: 'if (virus.hp <= 0) system.purge();',           type: 'light_dart'    },
     { code: 'await sys.compileModule(); // 模块实体化…',    type: 'light_dart' }
   ];
 
@@ -82,6 +82,14 @@
     const filled = Math.ceil(ratio * CFG.HP_PIPS);
     for (let i = 0; i < pipEls.length; i++) {
       pipEls[i].classList.toggle('on', i < filled);
+    }
+
+    // 新增：实时更新血量数字文本
+    const hpTextEl = document.getElementById('hp-text');
+    if (hpTextEl) {
+      hpTextEl.textContent = `${Math.ceil(state.hp)} / ${state.hpMax}`;
+      // 如果上限超过 100，数字变金色提示
+      hpTextEl.style.color = state.hpMax > 100 ? '#ffcc00' : '#5ae8ff';
     }
 
     const ready = state.energy >= state.energyMax;

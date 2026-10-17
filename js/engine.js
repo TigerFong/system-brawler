@@ -7,8 +7,9 @@
   const W     = CFG.W;
   const H     = CFG.H;
 
-  // 读取本地最高分
   let highestScore = parseInt(localStorage.getItem('sys_brawler_highscore') || '0', 10);
+  let sysPoints = parseInt(localStorage.getItem('sys_brawler_points') || '0', 10);
+  let upgrades = JSON.parse(localStorage.getItem('sys_brawler_upgrades') || '{"hp":0,"energy":0,"chip":0}');
 
   /* ==================== 音效 ==================== */
   DB.sfx = (function () {
@@ -85,9 +86,9 @@
   `;
   const RULES_HACKER = `
     <div class="rule-row"><span class="key">WASD</span><span class="txt">走位躲避杀毒软件</span></div>
-    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒程序包 · 砸向卫士</span></div>
-    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放全屏大招</span></div>
-    <div class="rule-row"><span class="key">状态</span><span class="txt" style="color:#ff5a7a;">即将解锁 · 敬请期待</span></div>
+    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒 · 拖拽到敌人身上直接引爆</span></div>
+    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放全屏大招 / Boss瘫痪时处决</span></div>
+    <div class="rule-row"><span class="key">目标</span><span class="txt">清空波次 · 拖拽病毒炸碎卫士</span></div>
   `;
 
   function showTitle() { dom.titleEl.classList.remove('hidden'); }
@@ -111,19 +112,76 @@
         cardHack.classList.add('active'); cardDef.classList.remove('active');
         dom.titleEl.classList.add('hacker-theme');
         rulesPanel.innerHTML = RULES_HACKER;
-        btnStart.textContent = '⚠️ 黑客模块正在编译中，暂不可用';
+        btnStart.textContent = '点击 / 按任意键 执行入侵';
       }
     }
     cardDef.addEventListener('click', (e) => { e.stopPropagation(); selectMode('defender'); });
     cardHack.addEventListener('click', (e) => { e.stopPropagation(); selectMode('hacker'); });
     rulesPanel.innerHTML = RULES_DEFENDER;
+
+    // ===== 永久升级系统 =====
+    const upPanel = document.getElementById('upgrade-panel');
+    const pointsText = document.getElementById('sys-points-text');
+    const btnHp = document.getElementById('up-hp');
+    const btnEnergy = document.getElementById('up-energy');
+    const btnChip = document.getElementById('up-chip');
+
+    // 动态计算价格（加上 Math.floor 向下取整，杜绝小数！并调低了一点倍率）
+    function getCost(type, level) {
+      if (type === 'hp') return Math.floor(50 * (1.35 ** level));     // 50, 67, 91, 123, 166...
+      if (type === 'energy') return Math.floor(100 * (1.5 ** level)); // 100, 150, 225, 337, 506...
+      if (type === 'chip') return Math.floor(100 * (1.5 ** level));   // 100, 150, 225, 337, 506...
+      return 9999;
+    }
+
+    function updateUpgradeUI() {
+      pointsText.textContent = sysPoints;
+      
+      // 生命上限（上限 99 级）
+      const costHp = getCost('hp', upgrades.hp);
+      btnHp.disabled = sysPoints < costHp || upgrades.hp >= 99;
+      btnHp.innerHTML = `生命上限 +20 (Lv.${upgrades.hp}/99)<br><span style="font-size:10px;color:${upgrades.hp>=99?'#ff5a7a':'#aaa'};">${upgrades.hp>=99 ? 'MAX' : 'Cost: '+costHp}</span>`;
+      
+      // 初始能量（上限 10 级，每级 +10）
+      const costEnergy = getCost('energy', upgrades.energy);
+      btnEnergy.disabled = sysPoints < costEnergy || upgrades.energy >= 10;
+      btnEnergy.innerHTML = `初始能量 +10 (Lv.${upgrades.energy}/10)<br><span style="font-size:10px;color:${upgrades.energy>=10?'#ff5a7a':'#aaa'};">${upgrades.energy>=10 ? 'MAX' : 'Cost: '+costEnergy}</span>`;
+      
+      // 芯片掉率（上限 30 级）
+      const costChip = getCost('chip', upgrades.chip);
+      btnChip.disabled = sysPoints < costChip || upgrades.chip >= 30;
+      btnChip.innerHTML = `芯片掉率 +10% (Lv.${upgrades.chip}/30)<br><span style="font-size:10px;color:${upgrades.chip>=30?'#ff5a7a':'#aaa'};">${upgrades.chip>=30 ? 'MAX' : 'Cost: '+costChip}</span>`;
+    }
+
+    function buyUpgrade(type) {
+      let cost = 0;
+      let maxLv = 99;
+      if (type === 'hp') { cost = getCost('hp', upgrades.hp); maxLv = 99; }
+      if (type === 'energy') { cost = getCost('energy', upgrades.energy); maxLv = 10; }
+      if (type === 'chip') { cost = getCost('chip', upgrades.chip); maxLv = 30; }
+
+      if (sysPoints >= cost && upgrades[type] < maxLv) {
+        sysPoints -= cost;
+        upgrades[type]++;
+        localStorage.setItem('sys_brawler_points', sysPoints.toString());
+        localStorage.setItem('sys_brawler_upgrades', JSON.stringify(upgrades));
+        DB.sfx.chip();
+        updateUpgradeUI();
+      }
+    }
+
+    btnHp.onclick = () => buyUpgrade('hp');
+    btnEnergy.onclick = () => buyUpgrade('energy');
+    btnChip.onclick = () => buyUpgrade('chip');
+
+    upPanel.style.display = 'block';
+    updateUpgradeUI();
   }
 
   /* ==================== 结算蓝屏 ==================== */
   let gameOverEl = null;
   
   function showGameOver() {
-    // 如果已经存在，先移除，保证每次死亡时数据是最新的
     if (gameOverEl) gameOverEl.remove();
 
     gameOverEl = document.createElement('div');
@@ -146,7 +204,6 @@
     title.textContent = 'SYSTEM INTEGRITY FAILURE'; 
     title.style.cssText = 'font-size:18px;letter-spacing:4px;color:#9fd6ff; margin-bottom: 40px;';
 
-    // 结算数据面板
     const statsBox = document.createElement('div');
     statsBox.style.cssText = `
       display: flex; flex-direction: column; gap: 16px; 
@@ -187,7 +244,10 @@
     DB.enemyBullets.length = 0; DB.enemies.length = 0; DB.chips.length = 0; DB.particles.length = 0;
     DB.boss = null; state.qte.active = false; DB.heldWeapon = null; DB.keys.clear(); DB.mouse.down = false;
 
-    state.hp = state.hpMax; state.energy = 0; state.wave = 1; state.waveBreakT = 0;
+    state.hpMax = 100 + (upgrades.hp * 20);
+    state.hp = state.hpMax; 
+    state.energy = upgrades.energy * 10;
+    state.wave = 1; state.waveBreakT = 0;
     state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
     state.mods = { damage: 0, grab: 0, launch: 0 };
     state.combo = 0; state.maxCombo = 0; state.score = 0;
@@ -200,8 +260,11 @@
   }
 
   function startGame() {
-    if (currentMode !== 'defender') { DB.sfx.error(); return; }
-    hideTitle(); resetWorld(true); state.scene = 'playing'; DB.sfx.start();
+    hideTitle(); 
+    resetWorld(true); 
+    state.mode = currentMode; // 记录当前模式
+    state.scene = 'playing'; 
+    DB.sfx.start();
   }
   
   function backToTitle() { 
@@ -209,7 +272,6 @@
     resetWorld(false); 
     showTitle(); 
     state.scene = 'title'; 
-    // 等待淡出结束后移除元素
     setTimeout(() => { if (gameOverEl) { gameOverEl.remove(); gameOverEl = null; } }, 400);
   }
 
@@ -245,30 +307,65 @@
     if (state.scene === 'playing') {
       bgCtx.save();
       
-      // 顶部 UI
+      // 顶部波次
       bgCtx.textAlign = 'center';
       bgCtx.font = 'bold 22px ui-monospace, monospace';
       bgCtx.fillStyle = 'rgba(150, 200, 255, 0.55)'; bgCtx.shadowColor = 'rgba(90, 240, 255, 0.6)'; bgCtx.shadowBlur = 16;
-      bgCtx.fillText(`WAVE ${String(state.wave).padStart(2, '0')}`, W / 2, 46);
       
-      // 连击 UI
+      const waveY = DB.boss ? 30 : 46;
+      bgCtx.fillText(`WAVE ${String(state.wave).padStart(2, '0')}`, W / 2, waveY);
+      
+      // ===== Boss 血条 =====
+      if (DB.boss) {
+        const barW = 600, barH = 12;
+        const barX = (W - barW) / 2, barY = 46;
+        
+        bgCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        bgCtx.strokeStyle = 'rgba(255, 90, 122, 0.5)';
+        bgCtx.lineWidth = 1;
+        bgCtx.fillRect(barX, barY, barW, barH);
+        bgCtx.strokeRect(barX, barY, barW, barH);
+        
+        const hpRatio = Math.max(0, DB.boss.hp / DB.boss.maxHp);
+        bgCtx.fillStyle = DB.boss.phase === 'paralyzed' ? '#ffcc00' : '#ff5a7a';
+        bgCtx.shadowColor = DB.boss.phase === 'paralyzed' ? '#ffcc00' : '#ff5a7a';
+        bgCtx.shadowBlur = 10;
+        bgCtx.fillRect(barX, barY, barW * hpRatio, barH);
+        
+        bgCtx.shadowBlur = 0;
+        bgCtx.font = 'bold 10px ui-monospace, monospace';
+        bgCtx.fillStyle = '#ffffff';
+        bgCtx.fillText(DB.boss.phase === 'paralyzed' ? 'SYSTEM HALTED' : 'BLUE SCREEN CORE', W / 2, barY + 10);
+      }
+
+      // ===== 连击 UI (带有缩放动效) =====
       if (state.combo > 1) {
+        bgCtx.save();
         bgCtx.textAlign = 'left';
+        const scale = 1 + Math.min(0.5, state.combo * 0.02);
+        bgCtx.translate(30, 90);
+        bgCtx.scale(scale, scale);
+        
         bgCtx.font = 'bold 32px ui-monospace, monospace';
-        bgCtx.fillStyle = '#ffcc00'; bgCtx.shadowColor = '#ffcc00';
-        bgCtx.fillText(`${state.combo} COMBO`, 30, 90);
+        bgCtx.fillStyle = '#ffcc00'; bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 15;
+        bgCtx.fillText(`${state.combo} COMBO`, 0, 0);
+        bgCtx.restore();
+
+        bgCtx.save();
+        bgCtx.textAlign = 'left';
         bgCtx.font = '14px ui-monospace, monospace';
-        bgCtx.fillStyle = '#ffffff'; bgCtx.shadowBlur = 0;
+        bgCtx.fillStyle = '#ffffff';
         bgCtx.fillText(`SCORE: ${state.score}`, 32, 115);
+        bgCtx.restore();
       }
 
       if (state.waveBreakT > 0) {
         bgCtx.textAlign = 'center'; bgCtx.font = '13px ui-monospace, monospace';
         bgCtx.fillStyle = 'rgba(150, 200, 255, 0.45)'; bgCtx.shadowBlur = 0;
-        bgCtx.fillText(`NEXT WAVE IN ${Math.max(0, state.waveBreakT).toFixed(1)}s`, W / 2, 70);
+        bgCtx.fillText(`NEXT WAVE IN ${Math.max(0, state.waveBreakT).toFixed(1)}s`, W / 2, DB.boss ? 75 : 70);
       }
       
-      // QTE
+      // ===== QTE =====
       if (state.qte.active) {
         bgCtx.fillStyle = 'rgba(0, 0, 0, 0.85)'; bgCtx.fillRect(0, H / 2 - 100, W, 200); 
         bgCtx.strokeStyle = '#ff5a7a'; bgCtx.lineWidth = 2;
@@ -276,9 +373,10 @@
         bgCtx.beginPath(); bgCtx.moveTo(0, H / 2 + 100); bgCtx.lineTo(W, H / 2 + 100); bgCtx.stroke();
 
         bgCtx.textAlign = 'center'; bgCtx.font = 'bold 20px ui-monospace, monospace';
-        bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText('⚠ 核心瘫痪 · 输入覆盖指令 ⚠', W / 2, H / 2 - 40);
+        bgCtx.fillStyle = '#ff5a7a'; bgCtx.shadowColor = '#ff5a7a'; bgCtx.shadowBlur = 20;
+        bgCtx.fillText('⚠ 核心瘫痪 · 输入覆盖指令 ⚠', W / 2, H / 2 - 40);
 
-        bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
+        bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff'; bgCtx.shadowBlur = 0;
         bgCtx.fillText(`剩余时间: ${state.qte.timer.toFixed(1)}s`, W / 2, H / 2 + 50);
 
         bgCtx.font = 'bold 48px ui-monospace, monospace';
@@ -297,11 +395,24 @@
         bgCtx.fillStyle = 'rgba(255, 255, 255, 0.2)'; bgCtx.fillRect(W / 2 - 150, H / 2 + 30, 300, 4);
         bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillRect(W / 2 - 150, H / 2 + 30, 300 * (state.qte.inputIndex / seq.length), 4);
       }
+
+      // ===== 大招功能提示 =====
+      if (!state.qte.active) {
+        bgCtx.save();
+        bgCtx.font = '11px ui-monospace, monospace';
+        bgCtx.textAlign = 'right';
+        bgCtx.fillStyle = 'rgba(150, 200, 255, 0.6)';
+        bgCtx.fillText('[4] 核心熔毁', W - 26, H - 105);
+        bgCtx.fillText('[3] 系统重载', W - 26, H - 120);
+        bgCtx.fillText('[2] 时间凝滞', W - 26, H - 135);
+        bgCtx.fillText('[1] 代码暴雨', W - 26, H - 150);
+        bgCtx.restore();
+      }
       
-      // 左侧 Buff
+      // ===== 左侧 Buff =====
       const mods = state.mods;
       if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0) {
-        bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left';
+        bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
         let yy = 30;
         if (mods.damage > 0) { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 16; }
         if (mods.grab > 0) { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 16; }
@@ -335,7 +446,7 @@
 
     dom.stage.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest('.mode-card') || e.target.closest('.title-start')) { if (state.scene === 'title') return; }
+      if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#upgrade-panel')) { if (state.scene === 'title') return; }
       if (state.scene === 'title') { startGame(); return; }
       if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
 
@@ -368,7 +479,7 @@
           if (k === targetChar) {
             state.qte.inputIndex++; DB.sfx.grab(); state.shake = Math.min(state.shake + 2, 10);
             if (state.qte.inputIndex >= state.qte.sequence.length) {
-              state.qte.active = false; DB.boss = null; state.energy = 0;
+              state.qte.active = false; DB.boss = null; // 保留能量，不再清零
               state.flash = 1.0; state.shake = 40; state.hitstop = 0.2;
               for (let i = 0; i < 120; i++) {
                 DB.particles.push({ x: W/2 + (Math.random()-0.5)*600, y: 100 + Math.random()*500, vx: (Math.random()-0.5)*100, vy: 300 + Math.random()*500, life: 1.5, maxLife: 1.5, size: 4 + Math.random()*6, color: '#5ee6a8', spin: 0, rot: 0 });
@@ -378,7 +489,7 @@
           } else {
             state.qte.inputIndex = 0; state.qte.timer -= 1.0; state.damageFlash = 0.4; state.shake = 20; DB.sfx.error();
           }
-        } else { if (k >= '1' && k <= '4') DB.tryUltimate(); }
+        } else { if (k >= '1' && k <= '4') DB.tryUltimate(k); }
         e.preventDefault();
       }
     });
@@ -390,8 +501,6 @@
     if (dt <= 0) return;
     state.t += dt;
     DB.updatePlayer(dt); DB.updateWeapons(dt); DB.updateEnemies(dt); DB.updateChips(dt); DB.updateParticles(dt); DB.updateTerminal(dt); updateWaves(dt);
-
-    state.energy = Math.max(0, state.energy - 1.5 * dt);
 
     if (state.comboTimer > 0) {
       state.comboTimer -= dt;
@@ -424,10 +533,14 @@
       state.shake = 30; 
       DB.heldWeapon = null; 
       
-      // 记录最高分
       if (state.score > highestScore) {
         highestScore = state.score;
         localStorage.setItem('sys_brawler_highscore', highestScore.toString());
+      }
+      const earnedPoints = Math.floor(state.score / 10);
+      if (earnedPoints > 0) {
+        sysPoints += earnedPoints;
+        localStorage.setItem('sys_brawler_points', sysPoints.toString());
       }
       showGameOver();
     }

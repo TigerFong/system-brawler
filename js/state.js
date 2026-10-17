@@ -17,6 +17,7 @@
     waveBreakT: 0,
     gameOverLock: 0,
     scene: 'title',
+    mode: 'defender',
     mods: { damage: 0, grab: 0, launch: 0 },
     qte: { active: false, timer: 0, sequence: "", inputIndex: 0 },
     

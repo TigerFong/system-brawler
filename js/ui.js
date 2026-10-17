@@ -84,17 +84,35 @@
       pipEls[i].classList.toggle('on', i < filled);
     }
 
-    // 新增：实时更新血量数字文本
     const hpTextEl = document.getElementById('hp-text');
     if (hpTextEl) {
       hpTextEl.textContent = `${Math.ceil(state.hp)} / ${state.hpMax}`;
-      // 如果上限超过 100，数字变金色提示
       hpTextEl.style.color = state.hpMax > 100 ? '#ffcc00' : '#5ae8ff';
     }
 
     const ready = state.energy >= state.energyMax;
     for (const el of eslotEls) {
       el.classList.toggle('ready', ready);
+    }
+
+    // ===== 新增：更新能量进度条 =====
+    const energyText = document.getElementById('energy-text');
+    const energyBarFill = document.getElementById('energy-bar-fill');
+    if (energyText && energyBarFill) {
+      const e = Math.floor(state.energy);
+      energyText.textContent = `${e} / ${state.energyMax}`;
+      energyBarFill.style.width = `${(state.energy / state.energyMax) * 100}%`;
+      
+      // 满了的时候进度条变金色闪烁
+      if (ready) {
+        energyBarFill.style.background = '#ffcc00';
+        energyBarFill.style.boxShadow = '0 0 15px #ffcc00';
+        energyText.style.color = '#ffcc00';
+      } else {
+        energyBarFill.style.background = '#c08bff';
+        energyBarFill.style.boxShadow = '0 0 10px #c08bff';
+        energyText.style.color = '#c08bff';
+      }
     }
   };
 

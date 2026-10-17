@@ -45,58 +45,58 @@
     const p = DB.player;
     const t = state.t;
     const pulse = 0.5 + 0.5 * Math.sin(t * 3.2);
+    const isHacker = state.mode === 'hacker';
+    
+    // 猩红色 / 青色
+    const mainColor = isHacker ? '255, 90, 122' : '80, 230, 255'; 
+    const shadowColor = isHacker ? '#ff5a7a' : '#5ae8ff';
 
+    // 外发光
     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 76);
-    g.addColorStop(0, `rgba(80, 230, 255, ${0.34 + pulse * 0.16})`);
-    g.addColorStop(0.45, 'rgba(80, 230, 255, 0.10)');
-    g.addColorStop(1, 'rgba(80, 230, 255, 0)');
+    g.addColorStop(0, `rgba(${mainColor}, ${0.34 + pulse * 0.16})`);
+    g.addColorStop(0.45, `rgba(${mainColor}, 0.10)`);
+    g.addColorStop(1, `rgba(${mainColor}, 0)`);
     ctx.fillStyle = g;
     ctx.fillRect(p.x - 76, p.y - 76, 152, 152);
 
-    // 抓取范围环（强化版）
-    const range = CFG.GRAB_RANGE + DB.state.mods.grab;
+    // ===== 抓取范围环（明显增强版） =====
+    const range = CFG.GRAB_RANGE + (state.mods ? state.mods.grab : 0);
     
     ctx.save();
-    // 1. 填充一层极淡的底色，让范围有“场”的感觉
-    ctx.fillStyle = `rgba(90, 240, 255, ${0.03 + pulse * 0.02})`;
+    // 1. 内圈极淡底色
+    ctx.fillStyle = `rgba(${mainColor}, ${0.03 + pulse * 0.02})`;
     ctx.beginPath();
     ctx.arc(p.x, p.y, range, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. 外圈实线（边界）
-    ctx.strokeStyle = `rgba(90, 240, 255, ${0.4 + pulse * 0.2})`;
+    // 2. 外圈虚线边界（更亮）
+    ctx.strokeStyle = `rgba(${mainColor}, ${0.4 + pulse * 0.3})`;
     ctx.lineWidth = 2;
+    ctx.setLineDash([10, 12]);
+    ctx.lineDashOffset = -t * 40;
     ctx.beginPath();
     ctx.arc(p.x, p.y, range, 0, Math.PI * 2);
     ctx.stroke();
-
-    // 3. 内圈滚动虚线（动态感）
-    ctx.strokeStyle = `rgba(140, 250, 255, ${0.7 + pulse * 0.3})`;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([10, 15]);
-    ctx.lineDashOffset = -t * 60; // 滚动速度加快
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, range - 6, 0, Math.PI * 2);
-    ctx.stroke();
-    
     ctx.restore();
 
+    // 地面投影
     ctx.save();
     ctx.globalAlpha = 0.3;
-    ctx.fillStyle = '#0a2a3a';
+    ctx.fillStyle = isHacker ? '#3a0a1a' : '#0a2a3a';
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 26, 22, 8, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
+    // 菱形本体
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(Math.PI / 4 + Math.sin(t * 2.1) * 0.07);
-    ctx.shadowColor = '#5ae8ff';
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 26;
 
     const s = 15;
-    ctx.fillStyle = 'rgba(150, 250, 255, 0.88)';
+    ctx.fillStyle = isHacker ? 'rgba(255, 150, 170, 0.88)' : 'rgba(150, 250, 255, 0.88)';
     ctx.beginPath();
     ctx.rect(-s, -s, s * 2, s * 2);
     ctx.fill();

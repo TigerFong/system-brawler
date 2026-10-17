@@ -411,3 +411,34 @@ canvas.layer {
   animation: none; /* 取消闪烁，提示开发中 */
   opacity: 0.8;
 }
+
+/* ---------- 升级面板 ---------- */
+#upgrade-panel {
+  pointer-events: auto; /* 允许点击 */
+  background: rgba(10, 20, 30, 0.8);
+  border: 1px solid rgba(94, 230, 168, 0.3);
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(94, 230, 168, 0.1) inset;
+}
+.upgrade-btn {
+  background: rgba(30, 50, 60, 0.9);
+  border: 1px solid rgba(94, 230, 168, 0.5);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.upgrade-btn:hover {
+  background: rgba(94, 230, 168, 0.2);
+  box-shadow: 0 0 12px rgba(94, 230, 168, 0.4);
+}
+.upgrade-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: #555;
+}

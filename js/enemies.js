@@ -25,7 +25,7 @@
   DB.spawnWave = function (n) {
     const droneCount = 2 + Math.floor(n / 2);
     const wormCount  = 1 + Math.floor(n / 2);
-    const shieldCount = n >= 3 ? 1 : 0; // 第 3 波开始出现盾卫
+    const shieldCount = n >= 3 ? 1 : 0;
 
     for (let i = 0; i < droneCount; i++) {
       const x = 120 + Math.random() * (W - 240);
@@ -33,7 +33,7 @@
       DB.enemies.push({
         type: 'drone', x, y, baseX: x, baseY: y,
         seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R,
-        fireCd: 0.8 + Math.random() * 1.6, flashT: 0
+        fireCd: 0.8 + Math.random() * 1.6, flashT: 0, frozen: 0
       });
     }
 
@@ -42,7 +42,7 @@
       DB.enemies.push({
         type: 'worm', x: fromLeft ? -40 : W + 40, y: CFG.GROUND_Y - 15,
         vx: 0, hp: DB.ENEMY_CFG.wormHp, r: 22,
-        seed: Math.random() * 100, flashT: 0,
+        seed: Math.random() * 100, flashT: 0, frozen: 0,
         phase: Math.random() * Math.PI * 2
       });
     }
@@ -52,7 +52,7 @@
       DB.enemies.push({
         type: 'shield', x: fromLeft ? -40 : W + 40, y: CFG.GROUND_Y - 25,
         vx: 0, hp: DB.ENEMY_CFG.shieldHp, r: 28,
-        seed: Math.random() * 100, flashT: 0,
+        seed: Math.random() * 100, flashT: 0, frozen: 0,
         facing: fromLeft ? 1 : -1
       });
     }
@@ -63,7 +63,7 @@
       x: W / 2, y: 200,
       hp: DB.BOSS_CFG.hp, maxHp: DB.BOSS_CFG.maxHp,
       r: DB.BOSS_CFG.radius,
-      fireCd: 2.0, summonCd: 3.0, phase: 'normal', flashT: 0,
+      fireCd: 2.0, summonCd: 3.0, phase: 'normal', flashT: 0, frozen: 0,
       seed: Math.random() * 100
     };
     state.qte.active = false;
@@ -147,11 +147,10 @@
     DB.spawnParticles(px, py, 12, '#ff5a7a', 300);
     DB.sfx.hurt();
     
-    // 受伤断连击
     state.combo = 0;
   }
 
-  function killEnemy(index, isQuake) {
+  function killEnemy(index) {
     const e = DB.enemies[index];
     if (!e) return;
     const color = e.type === 'worm' ? '#5ee6a8' : (e.type === 'shield' ? '#a88bff' : '#ff7a9a');
@@ -159,10 +158,20 @@
     DB.spawnParticles(e.x, e.y, 10, '#ffffff', 620);
     state.energy = Math.min(state.energyMax, state.energy + 8);
     state.shake  = Math.min(state.shake + 5, 24);
-    if (Math.random() < CHIP_DROP_RATE) DB.spawnChip(e.x, e.y);
+    
+    // 动态掉率（基础 60% + 升级加成）
+    const upData = JSON.parse(localStorage.getItem('sys_brawler_upgrades') || '{"hp":0,"energy":0,"chip":0}');
+    let dropChance = 0.6 + (upData.chip * 0.1); 
+    
+    while (dropChance > 0) {
+      if (Math.random() < Math.min(1, dropChance)) {
+        DB.spawnChip(e.x, e.y);
+      }
+      dropChance -= 1;
+    }
+
     DB.sfx.hit();
 
-    // 连击与得分
     state.combo++;
     state.comboTimer = 3.0;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
@@ -170,6 +179,27 @@
 
     DB.enemies.splice(index, 1);
   }
+
+  // 开放接口给 weapons.js（黑客拖拽爆破使用）
+  DB.killEnemy = function(index) { killEnemy(index); };
+  
+  DB.damageEnemy = function (e, index, dmg, isEarthquake) {
+    const finalDmg = dmg * 1.2 * (1 + state.mods.damage); // 拖拽近战 1.2 倍加成
+    e.hp -= finalDmg;
+    e.flashT = 0.15;
+    
+    state.hitstop = Math.max(state.hitstop, 0.08); 
+    state.shake = Math.min(state.shake + 8, 25);
+    DB.spawnParticles(e.x, e.y, 20, '#ff5a7a', 500);
+    DB.spawnParticles(e.x, e.y, 10, '#ffffff', 600);
+    DB.sfx.hit();
+
+    if (isEarthquake && DB.triggerQuake) {
+      DB.triggerQuake(e.x, e.y, finalDmg);
+    }
+
+    if (e.hp <= 0) killEnemy(index);
+  };
 
   /* ==================== 每帧更新 ==================== */
   DB.updateEnemies = function (dt) {
@@ -180,7 +210,9 @@
       const b = DB.boss;
       if (b.flashT > 0) b.flashT -= dt;
 
-      if (b.phase === 'normal') {
+      if (b.frozen > 0) {
+        b.frozen -= dt;
+      } else if (b.phase === 'normal') {
         b.x = W / 2 + Math.sin(state.t * 0.5) * 100;
         b.y = 200 + Math.sin(state.t * 0.8) * 30;
         b.fireCd -= dt;
@@ -196,7 +228,7 @@
         b.summonCd -= dt;
         if (b.summonCd <= 0) {
           b.summonCd = DB.BOSS_CFG.summonInterval;
-          DB.enemies.push({ type: 'drone', x: b.x, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R, fireCd: 1.0, flashT: 0 });
+          DB.enemies.push({ type: 'drone', x: b.x, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R, fireCd: 1.0, flashT: 0, frozen: 0 });
         }
       } 
       else if (b.phase === 'paralyzed') {
@@ -216,6 +248,11 @@
     for (let i = DB.enemies.length - 1; i >= 0; i--) {
       const e = DB.enemies[i];
       if (e.flashT > 0) e.flashT -= dt;
+
+      if (e.frozen > 0) {
+        e.frozen -= dt;
+        continue;
+      }
 
       if (e.type === 'drone') {
         e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
@@ -240,7 +277,7 @@
       else if (e.type === 'shield') {
         const dx = p.x - e.x, dy = p.y - e.y;
         const d = Math.hypot(dx, dy) || 1;
-        e.facing = dx > 0 ? 1 : -1; // 面向玩家
+        e.facing = dx > 0 ? 1 : -1; 
         e.x += (dx / d) * 60 * dt;
         e.y += (dy / d) * 60 * dt;
         if (d < e.r + p.r) damagePlayer(15, e.x, e.y);
@@ -275,7 +312,7 @@
       }
     }
 
-    /* --- 5. 武器 vs Boss & 小怪 --- */
+    /* --- 5. 武器 vs Boss & 小怪（防守方弹射逻辑） --- */
     for (let wi = DB.weapons.length - 1; wi >= 0; wi--) {
       const w = DB.weapons[wi];
       if (w.dead || w.held || !w.thrown) continue;
@@ -299,8 +336,8 @@
           DB.removeWeapon(w);
           hit = true;
 
-          if (w.def.effect === 'earthquake') {
-             triggerQuake(b.x, b.y, w.def.damage * (1 + state.mods.damage));
+          if (w.def.effect === 'earthquake' && DB.triggerQuake) {
+             DB.triggerQuake(b.x, b.y, w.def.damage * (1 + state.mods.damage));
           }
 
           if (b.hp <= 0) {
@@ -312,7 +349,6 @@
             let seq = "";
             for(let i=0; i<6; i++) seq += Math.floor(Math.random() * 10);
             state.qte.sequence = seq;
-            state.energy = state.energyMax;
             state.flash = 0.5;
             state.hitstop = 0.15;
           }
@@ -327,7 +363,6 @@
         const dx = w.x - e.x, dy = w.y - e.y;
         if (dx * dx + dy * dy < (w.r + e.r) * (w.r + e.r)) {
           
-          // 盾卫免伤判定
           if (e.type === 'shield') {
             const isFrontal = (w.vx * e.facing < 0);
             if (isFrontal) {
@@ -336,7 +371,7 @@
                state.shake = Math.min(state.shake + 4, 20);
                DB.sfx.error();
                DB.removeWeapon(w);
-               break; // 被挡住，不再往下执行扣血
+               break; 
             }
           }
 
@@ -349,26 +384,20 @@
           DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);
           DB.sfx.hit();
           
-          // 武器特效
           if (w.def.effect === 'pull') {
             const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
             const pd = Math.hypot(pdx, pdy) || 1;
-            const pullDist = 180; // 拉拽距离
+            const pullDist = 180;
 
-            // 1. 如果是浮游炮，必须把它的原点(baseX/baseY)一起拉过来
             if (e.type === 'drone') {
                e.baseX += (pdx / pd) * pullDist;
                e.baseY += (pdy / pd) * pullDist;
-               // 限制不能拉出屏幕外
                e.baseX = DB.clamp(e.baseX, 60, W - 60);
                e.baseY = DB.clamp(e.baseY, 60, H - 100);
             }
-            
-            // 2. 改变当前坐标
             e.x += (pdx / pd) * pullDist; 
             e.y += (pdy / pd) * pullDist;
 
-            // 3. 强烈视觉反馈：一条从敌人到玩家的能量连线 + 大量火花
             for (let k = 0; k < 10; k++) {
               const t = k / 10;
               DB.particles.push({
@@ -379,14 +408,12 @@
                 color: '#5ae8ff', spin: 0, rot: 0
               });
             }
-
-            // 4. 极致的打击感反馈
-            state.hitstop = Math.max(state.hitstop, 0.08); // 顿帧
-            state.shake = 26; // 剧烈震动
-            state.flash = Math.max(state.flash, 0.15); // 轻微闪白
-            DB.sfx.error(); // 用警报音效代表牵引
-          } else if (w.def.effect === 'earthquake') {
-            triggerQuake(e.x, e.y, finalDmg);
+            state.hitstop = Math.max(state.hitstop, 0.08); 
+            state.shake = 26; 
+            state.flash = Math.max(state.flash, 0.15); 
+            DB.sfx.error(); 
+          } else if (w.def.effect === 'earthquake' && DB.triggerQuake) {
+            DB.triggerQuake(e.x, e.y, finalDmg);
           }
 
           DB.removeWeapon(w);
@@ -397,9 +424,7 @@
     }
   };
 
-  /* ==================== 绘制 ==================== */
   DB.drawEnemies = function (ctx) {
-    // 画 Boss
     if (DB.boss) {
       const b = DB.boss;
       const flash = b.flashT > 0;
@@ -409,7 +434,7 @@
       g.addColorStop(1, 'rgba(120, 90, 255, 0)');
       ctx.fillStyle = g; ctx.fillRect(b.x - b.r * 2, b.y - b.r * 2, b.r * 4, b.r * 4);
 
-      ctx.fillStyle = b.phase === 'paralyzed' ? '#ffcc00' : '#0a0a2a';
+      ctx.fillStyle = b.phase === 'paralyzed' ? '#ffcc00' : (b.frozen > 0 ? '#5ae8ff' : '#0a0a2a');
       ctx.strokeStyle = b.phase === 'paralyzed' ? '#ffffff' : '#5ae8ff';
       ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -420,26 +445,30 @@
       ctx.restore();
     }
 
-    // 画小怪
     for (const e of DB.enemies) {
       const flash = e.flashT > 0;
       ctx.save();
 
+      if (e.frozen > 0) {
+        ctx.shadowColor = '#5ae8ff';
+        ctx.shadowBlur = 30;
+      }
+
       if (e.type === 'drone') {
         const w = 44, h = 34, x = e.x - w / 2, y = e.y - h / 2;
         const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, 40);
-        g.addColorStop(0, flash ? 'rgba(255,255,255,.7)' : 'rgba(255, 90, 120, .35)');
-        g.addColorStop(1, 'rgba(255, 90, 120, 0)');
+        g.addColorStop(0, flash ? 'rgba(255,255,255,.7)' : (e.frozen > 0 ? 'rgba(90,240,255,.7)' : 'rgba(255, 90, 120, .35)'));
+        g.addColorStop(1, e.frozen > 0 ? 'rgba(90,240,255,0)' : 'rgba(255, 90, 120, 0)');
         ctx.fillStyle = g; ctx.fillRect(e.x - 40, e.y - 40, 80, 80);
-        ctx.fillStyle = flash ? '#ffffff' : 'rgba(30, 12, 24, 0.95)';
-        ctx.strokeStyle = flash ? '#ffffff' : 'rgba(255, 90, 120, 0.9)';
+        ctx.fillStyle = flash ? '#ffffff' : (e.frozen > 0 ? '#0a2a3a' : 'rgba(30, 12, 24, 0.95)');
+        ctx.strokeStyle = flash ? '#ffffff' : (e.frozen > 0 ? '#5ae8ff' : 'rgba(255, 90, 120, 0.9)');
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = flash ? 'rgba(255,255,255,.3)' : 'rgba(255, 90, 120, 0.25)';
+        ctx.fillStyle = flash ? 'rgba(255,255,255,.3)' : (e.frozen > 0 ? 'rgba(90,240,255,.3)' : 'rgba(255, 90, 120, 0.25)');
         ctx.fillRect(x + 2, y + 2, w - 4, 9);
       } 
       else if (e.type === 'worm') {
-        const color = flash ? '#ffffff' : '#5ee6a8';
+        const color = flash ? '#ffffff' : (e.frozen > 0 ? '#5ae8ff' : '#5ee6a8');
         ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 15;
         for (let i = 0; i < 3; i++) {
           const offset = Math.sin(e.phase + i * 1.5) * 8;
@@ -450,13 +479,11 @@
         ctx.beginPath(); ctx.arc(e.x + 6, e.y - 4, 3, 0, Math.PI * 2); ctx.fill();
       }
       else if (e.type === 'shield') {
-        // 身体
-        ctx.fillStyle = flash ? '#ffffff' : '#1a1a30';
-        ctx.strokeStyle = '#a88bff'; ctx.lineWidth = 2;
+        ctx.fillStyle = flash ? '#ffffff' : (e.frozen > 0 ? '#1a3a4a' : '#1a1a30');
+        ctx.strokeStyle = e.frozen > 0 ? '#5ae8ff' : '#a88bff'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        // 盾牌
         const shieldX = e.x + e.facing * 25;
-        ctx.fillStyle = '#5ae8ff';
+        ctx.fillStyle = e.frozen > 0 ? '#ffffff' : '#5ae8ff';
         ctx.fillRect(shieldX - 5, e.y - 30, 10, 60);
       }
       ctx.restore();
@@ -477,29 +504,5 @@
       ctx.restore();
     }
   };
-
-  // 全局地震特效
-  function triggerQuake(cx, cy, dmg) {
-    state.shake = 35; state.hitstop = 0.08;
-    state.flash = Math.max(state.flash, 0.3);
-    DB.sfx.error();
-
-    for (let i = DB.enemies.length - 1; i >= 0; i--) {
-      const e = DB.enemies[i];
-      e.hp -= dmg;
-      e.flashT = 0.15;
-      if (e.hp <= 0) killEnemy(i, true);
-    }
-
-    for (let i = 0; i < 40; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 600 + Math.random() * 400;
-      DB.particles.push({
-        x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        life: 0.6, maxLife: 0.6, size: 5 + Math.random() * 5,
-        color: '#ffcc00', spin: 0, rot: a
-      });
-    }
-  }
 
 })(window.DB);

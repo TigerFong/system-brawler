@@ -24,7 +24,10 @@
         <div id="hp-text" style="font-size: 11px; margin-top: 4px; color: #5ae8ff; font-weight: bold; letter-spacing: 1px;">100 / 100</div>
       </div>
       <div id="energy-panel">
-        <div class="hud-label">ULTIMATE</div>
+        <div class="hud-label">ULTIMATE <span id="energy-text" style="color: #c08bff; margin-left: 8px;">0 / 100</span></div>
+        <div id="energy-bar-bg" style="width: 160px; height: 6px; background: rgba(0,0,0,0.5); border: 1px solid rgba(150,90,255,0.3); border-radius: 3px; margin-bottom: 12px; margin-left: auto; overflow: hidden;">
+          <div id="energy-bar-fill" style="width: 0%; height: 100%; background: #c08bff; box-shadow: 0 0 10px #c08bff; transition: width 0.1s linear;"></div>
+        </div>
         <div id="energy-slots"></div>
       </div>
     </div>
@@ -54,6 +57,18 @@
       <!-- 玩法说明 -->
       <div class="title-rules" id="rules-panel">
         <!-- 由 JS 动态注入 -->
+      </div>
+
+      <!-- 永久升级面板 -->
+      <div id="upgrade-panel" style="margin-top: 20px; display: block; width: 420px; padding: 12px;">
+        <div style="text-align: center; color: #5ee6a8; margin-bottom: 10px; font-weight: bold; letter-spacing: 2px;">
+          SYS POINTS: <span id="sys-points-text">0</span>
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button class="upgrade-btn" id="up-hp">生命上限 +20<br><span style="font-size:10px;color:#aaa;">Cost: 50</span></button>
+          <button class="upgrade-btn" id="up-energy">初始能量 +20<br><span style="font-size:10px;color:#aaa;">Cost: 80</span></button>
+          <button class="upgrade-btn" id="up-chip">芯片掉率 +10%<br><span style="font-size:10px;color:#aaa;">Cost: 100</span></button>
+        </div>
       </div>
 
       <div class="title-start" id="btn-start">点击 / 按任意键 开始编译</div>

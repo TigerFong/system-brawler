@@ -32,7 +32,9 @@
   DB.spawnWeapon = function (type) {
     if (countActiveWeapons() >= CFG.MAX_WEAPONS) return null;
 
-    const def = DB.WEAPON_TYPES[type];
+    const isHacker = state.mode === 'hacker';
+    const table = isHacker ? DB.HACKER_WEAPON_TYPES : DB.WEAPON_TYPES;
+    const def = table[type];
     if (!def) return null;
 
     const p = pickSpawnPoint();
@@ -108,7 +110,7 @@
 
     if (!best) return;
 
-    const grabRange = CFG.GRAB_RANGE + DB.state.mods.grab;
+    const grabRange = CFG.GRAB_RANGE + state.mods.grab;
     const distToPlayer = Math.hypot(best.x - DB.player.x, best.y - DB.player.y);
     if (distToPlayer > grabRange) {
       DB.spawnParticles(best.x, best.y, 6, '#ff5a7a', 160);
@@ -132,8 +134,13 @@
     best.vx = 0;
     best.vy = 0;
     best.rotV = 0;
-    best.anchorX = best.x;
-    best.anchorY = best.y;
+    
+    // 黑客模式不需要弹弓锚点
+    if (state.mode !== 'hacker') {
+      best.anchorX = best.x;
+      best.anchorY = best.y;
+    }
+    
     if (best.el) best.el.classList.add('held');
     DB.sfx.grab();
     DB.heldWeapon = best;
@@ -144,14 +151,22 @@
     const w = DB.heldWeapon;
     if (!w) return;
 
+    w.held = false;
+    if (w.el) w.el.classList.remove('held');
+    DB.heldWeapon = null;
+
+    // ===== 黑客模式：松手原地掉落 =====
+    if (state.mode === 'hacker') {
+      w.thrown = false;
+      w.vx = 0; w.vy = 0; w.rotV = 0;
+      return;
+    }
+
+    // ===== 防守方：弹弓发射 =====
     const SL = CFG.SLINGSHOT;
     const dx = w.x - w.anchorX;
     const dy = w.y - w.anchorY;
     const pullDist = Math.hypot(dx, dy);
-
-    w.held = false;
-    if (w.el) w.el.classList.remove('held');
-    DB.heldWeapon = null;
 
     if (pullDist < SL.MIN_PULL) {
       w.thrown = false;
@@ -166,7 +181,7 @@
 
     const t = DB.clamp(pullDist / SL.MAX_PULL, 0, 1);
     let speed = SL.MIN_LAUNCH + (SL.MAX_LAUNCH - SL.MIN_LAUNCH) * t;
-    speed *= (1 + DB.state.mods.launch);
+    speed *= (1 + state.mods.launch);
 
     w.thrown = true;
     w.age = 0;
@@ -189,7 +204,7 @@
   };
 
   /* ---------- 地震特效 ---------- */
-  function triggerQuake(cx, cy, dmg) {
+  DB.triggerQuake = function (cx, cy, dmg) {
     state.shake = 35;
     state.hitstop = 0.08;
     state.flash = Math.max(state.flash, 0.3);
@@ -203,7 +218,8 @@
         const color = e.type === 'worm' ? '#5ee6a8' : '#ff7a9a';
         DB.spawnParticles(e.x, e.y, 24, color, 460);
         state.energy = Math.min(state.energyMax, state.energy + 8);
-        DB.enemies.splice(i, 1);
+        if (DB.killEnemy) DB.killEnemy(i);
+        else DB.enemies.splice(i, 1);
       }
     }
 
@@ -217,7 +233,7 @@
         color: '#ffcc00', spin: 0, rot: a
       });
     }
-  }
+  };
 
   /* ---------- 物理更新 ---------- */
   DB.updateWeapons = function (dt) {
@@ -249,28 +265,86 @@
 
       if (w.held) {
         const mouse = DB.mouse;
-        let tx = mouse.x;
-        let ty = mouse.y;
-        const ddx = tx - w.anchorX;
-        const ddy = ty - w.anchorY;
-        const dd  = Math.hypot(ddx, ddy);
-        if (dd > SL.MAX_PULL) {
-          const k = SL.MAX_PULL / dd;
-          tx = w.anchorX + ddx * k;
-          ty = w.anchorY + ddy * k;
-        }
+        
+        if (state.mode === 'hacker') {
+          // ===== 黑客模式：直接跟随鼠标拖拽 =====
+          const k = 1 - Math.exp(-30 * dt);
+          w.x += (mouse.x - w.x) * k;
+          w.y += (mouse.y - w.y) * k;
+          w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
+          w.vx = 0; w.vy = 0;
 
-        const k = 1 - Math.exp(-26 * dt);
-        w.x += (tx - w.x) * k;
-        w.y += (ty - w.y) * k;
-        w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
-        w.vx = 0; w.vy = 0;
+          // 实时碰撞引爆检测
+          let hitSomething = false;
+          
+          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
+            const e = DB.enemies[ei];
+            if (Math.hypot(w.x - e.x, w.y - e.y) < w.r + e.r) {
+              DB.damageEnemy(e, ei, w.def.damage, w.def.effect === 'earthquake');
+              DB.removeWeapon(w);
+              DB.heldWeapon = null;
+              hitSomething = true;
+              break;
+            }
+          }
 
-        const pull = Math.hypot(w.x - w.anchorX, w.y - w.anchorY);
-        if (pull > SL.MAX_PULL * 0.7) {
-          const jitter = (pull / SL.MAX_PULL) * 1.6;
-          w.x += (Math.random() - 0.5) * jitter;
-          w.y += (Math.random() - 0.5) * jitter;
+          if (!hitSomething && DB.boss && DB.boss.phase === 'normal') {
+            const b = DB.boss;
+            if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r) {
+              b.hp -= w.def.damage * 1.2 * (1 + state.mods.damage);
+              b.flashT = 0.15;
+              state.hitstop = Math.max(state.hitstop, 0.08);
+              state.shake = Math.min(state.shake + 8, 25);
+              DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
+              DB.sfx.hit();
+              
+              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.def.damage);
+              
+              DB.removeWeapon(w);
+              DB.heldWeapon = null;
+              hitSomething = true;
+              
+              if (b.hp <= 0) {
+                b.hp = 0;
+                b.phase = 'paralyzed';
+                state.qte.active = true;
+                state.qte.timer = 8.0;
+                state.qte.inputIndex = 0;
+                let seq = "";
+                for(let k=0; k<6; k++) seq += Math.floor(Math.random() * 10);
+                state.qte.sequence = seq;
+                state.flash = 0.5;
+                state.hitstop = 0.15;
+              }
+            }
+          }
+
+          if (hitSomething) continue;
+        } else {
+          // ===== 防守方：弹弓皮兜拉拽 =====
+          let tx = mouse.x;
+          let ty = mouse.y;
+          const ddx = tx - w.anchorX;
+          const ddy = ty - w.anchorY;
+          const dd  = Math.hypot(ddx, ddy);
+          if (dd > SL.MAX_PULL) {
+            const k = SL.MAX_PULL / dd;
+            tx = w.anchorX + ddx * k;
+            ty = w.anchorY + ddy * k;
+          }
+
+          const k = 1 - Math.exp(-26 * dt);
+          w.x += (tx - w.x) * k;
+          w.y += (ty - w.y) * k;
+          w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
+          w.vx = 0; w.vy = 0;
+
+          const pull = Math.hypot(w.x - w.anchorX, w.y - w.anchorY);
+          if (pull > SL.MAX_PULL * 0.7) {
+            const jitter = (pull / SL.MAX_PULL) * 1.6;
+            w.x += (Math.random() - 0.5) * jitter;
+            w.y += (Math.random() - 0.5) * jitter;
+          }
         }
       }
       else if (!w.thrown) {
@@ -385,9 +459,29 @@
     if (!w) return;
 
     const SL = CFG.SLINGSHOT;
-    const ax = w.anchorX, ay = w.anchorY;
-    const bx = w.x, by = w.y;
+    const ax = w.anchorX;
+    const ay = w.anchorY;
+    const bx = w.x;
+    const by = w.y;
 
+    // ===== 黑客模式：红色数据线 =====
+    if (state.mode === 'hacker') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 90, 122, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
+      ctx.lineDashOffset = -state.t * 100;
+      ctx.shadowColor = '#ff5a7a';
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      ctx.moveTo(DB.player.x, DB.player.y);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    // ===== 防守方：皮筋 =====
     const dx = bx - ax, dy = by - ay;
     const pullDist = Math.hypot(dx, dy);
     if (pullDist < 4) return;

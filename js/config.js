@@ -41,6 +41,15 @@ window.DB = window.DB || {};
     gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
   };
 
+  // 新增：黑客专属武器外观
+  DB.HACKER_WEAPON_TYPES = {
+    light_dart:  { label: '💀 木马飞刀', w: 100, h: 34, r: 24, damage: 10 },
+    stun_chip:   { label: '🧬 宏病毒',   w: 100, h: 34, r: 26, damage: 13 },
+    fire_shield: { label: '☣️ 勒索炸弹', w: 116, h: 38, r: 28, damage: 19 },
+    link:        { label: '🕸️ 蠕虫牵引', w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
+    gravity:     { label: '☠️ 零日漏洞', w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
+  };
+
   DB.ENEMY_CFG = {
     droneHp: 30,
     wormHp: 45,

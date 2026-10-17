@@ -1,0 +1,413 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #07060f;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#viewport {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+
+#stage {
+  position: relative;
+  width: 1280px; height: 720px;
+  transform-origin: center center;
+  background:
+    radial-gradient(ellipse at 50% 35%, #1a1130 0%, #0c0818 55%, #05030b 100%);
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+#world { position: absolute; inset: 0; will-change: transform; }
+
+canvas.layer {
+  position: absolute; inset: 0;
+  width: 1280px; height: 720px;
+  display: block;
+  pointer-events: none;
+}
+
+#bg { z-index: 1; }
+#target-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+#weapon-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+#fx { z-index: 4; }
+
+/* ---------- 武器 ---------- */
+.weapon {
+  position: absolute;
+  left: 0; top: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  color: #a8f0ff;
+  border: 1.5px solid rgba(90, 240, 255, .65);
+  border-radius: 20px; /* 圆角胶囊感 */
+  background: linear-gradient(135deg, rgba(20, 60, 100, 0.95), rgba(10, 20, 40, 0.98));
+  box-shadow:
+    0 0 14px rgba(90, 240, 255, .25),
+    0 0 4px rgba(90, 240, 255, .3) inset,
+    0 6px 18px rgba(0, 0, 0, .5);
+  pointer-events: none;
+  will-change: transform, opacity;
+  transform-origin: 50% 50%;
+  text-shadow: 0 0 8px rgba(90, 240, 255, .8);
+}
+.weapon::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 20px;
+  background: linear-gradient(115deg, transparent 35%, rgba(140, 250, 255, .15) 50%, transparent 65%);
+  animation: shimmer 2.4s linear infinite;
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+.weapon.held {
+  border-color: rgba(255, 255, 255, .95);
+  box-shadow: 0 0 30px rgba(140, 250, 255, .9), 0 0 0 2px rgba(255,255,255,.3) inset;
+}
+
+/* ---------- 木桩目标 ---------- */
+.target {
+  position: absolute;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  transition: filter .08s linear;
+}
+.target .hp-bar {
+  width: 100%; height: 7px; margin-bottom: 6px;
+  border: 1px solid rgba(90, 240, 255, .5);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .6);
+  overflow: hidden;
+}
+.target .hp-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #39ffd0, #5ae8ff);
+  box-shadow: 0 0 10px rgba(90, 240, 255, .9);
+  transition: width .12s linear;
+}
+.target .body {
+  width: 100%; height: 100%;
+  border-radius: 8px 8px 4px 4px;
+  border: 2px solid rgba(120, 170, 255, .55);
+  background:
+    repeating-linear-gradient(0deg, rgba(120,170,255,.10) 0 8px, transparent 8px 16px),
+    linear-gradient(180deg, rgba(40, 60, 120, .9), rgba(18, 22, 48, .95));
+  box-shadow: 0 0 22px rgba(120, 170, 255, .3), 0 10px 30px rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(160, 200, 255, .5);
+  font-size: 11px; letter-spacing: 2px;
+}
+.target.hit .body { animation: targetHit .16s ease-out; }
+@keyframes targetHit {
+  0%   { transform: translateX(0) scale(1); filter: brightness(2.4); }
+  35%  { transform: translateX(5px) scale(1.03); }
+  70%  { transform: translateX(-4px) scale(.99); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+
+.target.broken { animation: targetBreak .45s ease-out forwards; pointer-events: none; }
+@keyframes targetBreak {
+  0%   { transform: scale(1); opacity: 1; filter: brightness(3); }
+  30%  { transform: scale(1.14) rotate(2deg); opacity: .9; }
+  100% { transform: scale(.55) rotate(-14deg); opacity: 0; filter: brightness(0.3); }
+}
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+
+.hud-label {
+  font-size: 10px; letter-spacing: 2.5px;
+  color: rgba(150, 190, 240, .65);
+  margin-bottom: 7px;
+}
+
+#hp-panel { position: absolute; right: 26px; top: 20px; text-align: right; }
+
+#hp-pips { display: flex; gap: 6px; justify-content: flex-end; }
+.pip {
+  width: 26px; height: 13px;
+  border: 1px solid rgba(90, 240, 255, .55);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .45);
+  transition: background .18s, box-shadow .18s;
+}
+.pip.on {
+  background: linear-gradient(180deg, #5ae8ff, #2aa8d8);
+  box-shadow: 0 0 12px rgba(90, 240, 255, .85);
+}
+
+#energy-panel { position: absolute; right: 26px; bottom: 24px; text-align: right; }
+
+#energy-slots { display: flex; gap: 6px; justify-content: flex-end; }
+.eslot {
+  width: 34px; height: 34px;
+  border: 1.5px solid rgba(150, 90, 255, .45);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  color: rgba(170, 130, 255, .5);
+  background: rgba(0, 0, 0, .45);
+  transition: all .15s;
+}
+.eslot.ready {
+  border-color: rgba(190, 140, 255, .95);
+  color: #e0ccff;
+  background: linear-gradient(180deg, rgba(120, 60, 220, .85), rgba(60, 20, 130, .9));
+  box-shadow: 0 0 20px rgba(160, 90, 255, .85), 0 0 8px rgba(190,140,255,.6) inset;
+  animation: energyPulse 1.1s ease-in-out infinite;
+}
+@keyframes energyPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.07); }
+}
+
+/* ---------- 编译终端 ---------- */
+#terminal {
+  position: absolute;
+  left: 50%; bottom: 16px;
+  transform: translateX(-50%);
+  width: 660px; height: 108px;
+  padding: 9px 14px;
+  z-index: 10;
+  pointer-events: none;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  overflow: hidden;
+  border: 1px solid rgba(90, 240, 255, .18);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(6, 12, 24, .35), rgba(6, 12, 24, .78));
+  box-shadow: 0 0 30px rgba(0, 0, 0, .55) inset;
+}
+#terminal::before {
+  content: "compiler://defense.build";
+  position: absolute; top: 6px; left: 14px;
+  font-size: 9px; letter-spacing: 1.5px;
+  color: rgba(90, 240, 255, .35);
+}
+.term-line {
+  font-size: 12px; line-height: 1.55;
+  color: #5ee6a8;
+  white-space: pre;
+  text-shadow: 0 0 8px rgba(94, 230, 168, .45);
+  animation: lineIn .18s ease-out;
+}
+.term-line::before { content: "> "; color: rgba(94, 230, 168, .45); }
+.term-line:last-child::after {
+  content: "▊";
+  color: #5ee6a8;
+  animation: caret 1s steps(1) infinite;
+  margin-left: 2px;
+}
+@keyframes caret { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+@keyframes lineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* ---------- 全屏闪白 ---------- */
+#flash {
+  position: absolute; inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: #fff;
+  opacity: 0;
+}
+
+/* ---------- 标题画面 ---------- */
+#title-screen {
+  position: absolute; inset: 0;
+  z-index: 25;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center,
+    rgba(10, 6, 24, 0.55) 0%,
+    rgba(5, 3, 11, 0.90) 70%,
+    rgba(3, 2, 8, 0.96) 100%);
+  pointer-events: none;
+  transition: opacity .4s ease;
+}
+#title-screen.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.title-big {
+  font-size: 54px;
+  font-weight: 800;
+  letter-spacing: 14px;
+  padding-left: 14px;              /* 补偿 letter-spacing 的右侧空隙 */
+  color: #dff3ff;
+  text-shadow:
+    0 0 26px rgba(90, 240, 255, 0.75),
+    0 0 8px  rgba(140, 250, 255, 0.95);
+  animation: titleGlow 2.8s ease-in-out infinite;
+}
+@keyframes titleGlow {
+  0%, 100% { text-shadow: 0 0 22px rgba(90,240,255,.65), 0 0 6px rgba(140,250,255,.85); }
+  50%      { text-shadow: 0 0 40px rgba(90,240,255,.95), 0 0 14px rgba(190,250,255,1); }
+}
+
+.title-sub {
+  margin-top: 12px;
+  font-size: 13px;
+  letter-spacing: 5px;
+  color: rgba(150, 200, 255, 0.55);
+}
+
+.title-rules {
+  margin-top: 46px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-width: 380px;
+}
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: rgba(190, 220, 255, 0.75);
+}
+.rule-row .key {
+  flex: 0 0 74px;
+  text-align: center;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #a8f0ff;
+  border: 1px solid rgba(90, 240, 255, 0.45);
+  border-radius: 5px;
+  background: rgba(20, 40, 62, 0.6);
+  box-shadow: 0 0 10px rgba(90, 240, 255, 0.18) inset;
+}
+.rule-row .txt {
+  color: rgba(170, 205, 245, 0.72);
+}
+
+.title-start {
+  margin-top: 52px;
+  font-size: 14px;
+  letter-spacing: 4px;
+  color: rgba(150, 240, 255, 0.9);
+  text-shadow: 0 0 14px rgba(90, 240, 255, 0.6);
+  animation: startBlink 1.6s ease-in-out infinite;
+}
+@keyframes startBlink {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* ---------- 标题画面：双阵营升级 ---------- */
+.mode-select {
+  display: flex;
+  gap: 30px;
+  margin-top: 36px;
+  margin-bottom: 24px;
+  pointer-events: auto; /* 允许点击 */
+}
+
+.mode-card {
+  width: 210px;
+  padding: 20px 16px;
+  border: 1px solid rgba(90, 240, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(10, 20, 35, 0.6);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-card::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(90, 240, 255, 0.15), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.mode-card:hover {
+  border-color: rgba(90, 240, 255, 0.55);
+  transform: translateY(-2px);
+}
+
+.mode-card.active {
+  border-color: #5ae8ff;
+  box-shadow: 0 0 22px rgba(90, 240, 255, 0.35), 0 0 12px rgba(90, 240, 255, 0.15) inset;
+}
+.mode-card.active::before { opacity: 1; }
+
+.mode-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 8px rgba(90, 240, 255, 0.6));
+  transition: filter 0.3s;
+}
+
+.mode-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #dff3ff;
+  margin-bottom: 4px;
+  transition: color 0.3s;
+}
+
+.mode-desc {
+  font-size: 11px;
+  color: rgba(150, 200, 255, 0.5);
+  letter-spacing: 1px;
+}
+
+/* 黑客模式主题（猩红） */
+.mode-card[data-mode="hacker"].active {
+  border-color: #ff5a7a;
+  box-shadow: 0 0 22px rgba(255, 90, 122, 0.35), 0 0 12px rgba(255, 90, 122, 0.15) inset;
+}
+.mode-card[data-mode="hacker"].active::before {
+  background: linear-gradient(180deg, rgba(255, 90, 122, 0.15), transparent);
+}
+.mode-card[data-mode="hacker"].active .mode-icon {
+  filter: drop-shadow(0 0 8px rgba(255, 90, 122, 0.8));
+}
+.mode-card[data-mode="hacker"].active .mode-name {
+  color: #ffd8e2;
+}
+.mode-card[data-mode="hacker"]:hover {
+  border-color: rgba(255, 90, 122, 0.55);
+}
+
+/* 规则面板微调 */
+.title-rules {
+  margin-top: 12px;
+  min-width: 400px;
+  transition: opacity 0.2s;
+}
+
+/* 黑客模式下的规则文字变色 */
+#title-screen.hacker-theme .rule-row .key {
+  color: #ffd8e2;
+  border-color: rgba(255, 90, 122, 0.5);
+  background: rgba(62, 20, 20, 0.6);
+  box-shadow: 0 0 10px rgba(255, 90, 122, 0.18) inset;
+}
+#title-screen.hacker-theme .rule-row .txt {
+  color: rgba(255, 170, 180, 0.72);
+}
+
+/* 黑客模式下开始按钮的状态 */
+#title-screen.hacker-theme .title-start {
+  color: #ff5a7a;
+  text-shadow: 0 0 14px rgba(255, 90, 122, 0.6);
+  animation: none; /* 取消闪烁，提示开发中 */
+  opacity: 0.8;
+}

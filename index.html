@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Brawler — 系统暴徒原型</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="viewport">
+  <div id="stage">
+    <div id="world">
+      <canvas id="bg" class="layer" width="1280" height="720"></canvas>
+      <div id="target-layer"></div>
+      <div id="weapon-layer"></div>
+      <canvas id="fx" class="layer" width="1280" height="720"></canvas>
+    </div>
+
+    <div id="hud">
+      <div id="hp-panel">
+        <div class="hud-label">SYSTEM INTEGRITY</div>
+        <div id="hp-pips"></div>
+      </div>
+      <div id="energy-panel">
+        <div class="hud-label">ULTIMATE</div>
+        <div id="energy-slots"></div>
+      </div>
+    </div>
+
+    <div id="terminal">
+      <div id="term-lines"></div>
+    </div>
+
+    <div id="title-screen">
+      <div class="title-big">SYSTEM BRAWLER</div>
+      <div class="title-sub">系统暴徒 · 双阵营原型</div>
+
+      <!-- 阵营选择 -->
+      <div class="mode-select">
+        <div class="mode-card active" id="mode-defender" data-mode="defender">
+          <div class="mode-icon">🛡️</div>
+          <div class="mode-name">安全卫士</div>
+          <div class="mode-desc">防守方</div>
+        </div>
+        <div class="mode-card" id="mode-hacker" data-mode="hacker">
+          <div class="mode-icon">😈</div>
+          <div class="mode-name">黑客</div>
+          <div class="mode-desc">攻击方</div>
+        </div>
+      </div>
+
+      <!-- 玩法说明 -->
+      <div class="title-rules" id="rules-panel">
+        <!-- 由 JS 动态注入 -->
+      </div>
+
+      <div class="title-start" id="btn-start">点击 / 按任意键 开始编译</div>
+    </div>
+
+    <div id="flash"></div>
+</div>
+
+<!-- 加载顺序即依赖顺序，切勿随意调整 -->
+<script src="js/config.js"></script>
+<script src="js/dom.js"></script>
+<script src="js/state.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/player.js"></script>
+<script src="js/ultimate.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/engine.js"></script>
+</body>
+</html>

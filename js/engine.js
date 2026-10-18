@@ -234,6 +234,13 @@
 
   /* ==================== 渲染 ==================== */
   function render() {
+    // ===== 新增：QTE 时隐藏武器层，防止遮挡密码 =====
+    if (state.qte.active) {
+      dom.weaponLayer.style.opacity = '0';
+    } else {
+      dom.weaponLayer.style.opacity = '1';
+    }
+
     // 摄像机平滑跟随
     let targetX = DB.player.x - VW / 2;
     let targetY = DB.player.y - VH / 2;

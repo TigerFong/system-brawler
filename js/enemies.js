@@ -27,12 +27,13 @@
     const minY = DB.clamp(camY - 100, CFG.PLAY_TOP, CFG.GROUND_Y);
     const maxY = DB.clamp(camY + CFG.VIEW_H, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    const hpMult = 1 + (n - 1) * 0.35;     
-    const speedMult = 1 + (n - 1) * 0.05;  
+    // ===== 调整：怪物血量成长放缓到 1.35，移速不变 =====
+    const hpMult = Math.pow(1.35, n - 1);     
+    const speedMult = 1.0; 
     
-    const droneCount = 3 + Math.floor(n / 2);
-    const wormCount  = 2 + Math.floor(n / 2);
-    const shieldCount = 1 + Math.floor(n / 4); 
+    const droneCount = 2 + Math.floor(n / 3);
+    const wormCount  = 1 + Math.floor(n / 3);
+    const shieldCount = 1 + Math.floor(n / 5); 
 
     for (let i = 0; i < droneCount; i++) {
       const x = minX + Math.random() * (maxX - minX);
@@ -57,7 +58,7 @@
         hp: Math.floor(DB.ENEMY_CFG.wormHp * hpMult),
         maxHp: Math.floor(DB.ENEMY_CFG.wormHp * hpMult),
         r: 22,
-        speed: DB.ENEMY_CFG.wormSpeed * speedMult,
+        speed: DB.ENEMY_CFG.wormSpeed * speedMult, 
         seed: Math.random() * 100, flashT: 0, frozen: 0,
         phase: Math.random() * Math.PI * 2
       });
@@ -73,7 +74,7 @@
         hp: Math.floor(DB.ENEMY_CFG.shieldHp * hpMult),
         maxHp: Math.floor(DB.ENEMY_CFG.shieldHp * hpMult),
         r: 28,
-        speed: 60 * speedMult,
+        speed: 60 * speedMult, 
         seed: Math.random() * 100, flashT: 0, frozen: 0,
         facing: fromLeft ? 1 : -1
       });
@@ -87,7 +88,10 @@
     const typePool = isBig ? DB.BIG_BOSS_TYPES : DB.SMALL_BOSS_TYPES;
     const bossType = typePool[Math.floor(Math.random() * typePool.length)];
     
-    const hp = isBig ? DB.BOSS_CFG.bigHp : DB.BOSS_CFG.smallHp;
+    // ===== 调整：Boss 血量放缓到 1.4 倍，配合玩家成长 =====
+    const waveMult = Math.pow(1.4, state.wave - 1);
+    const baseHp = isBig ? DB.BOSS_CFG.bigHp : DB.BOSS_CFG.smallHp;
+    const hp = Math.floor(baseHp * waveMult);
 
     const startX = camX + CFG.VIEW_W / 2;
     const startY = camY + 200;
@@ -257,7 +261,7 @@
   DB.updateEnemies = function (dt) {
     const p = DB.player;
 
-    // ===== 终极修复：每帧强制清理血量异常或为负数的僵尸怪 =====
+    // 每帧强制清理血量异常或为负数的僵尸怪
     for (let i = DB.enemies.length - 1; i >= 0; i--) {
       const e = DB.enemies[i];
       if (e.hp <= 0 || isNaN(e.hp)) {
@@ -295,25 +299,31 @@
         b.y = b.baseY + Math.sin(state.t * 0.8) * 30;
         b.fireCd -= dt;      
         
+        // ===== 核心修改：Boss 攻击力随波次提升 =====
+        const waveScale = 1 + (state.wave - 1) * 0.1; // 攻击强度倍率
+        const speedScale = 1 + (state.wave - 1) * 0.05; // 弹幕速度倍率
+
         if (b.fireCd <= 0) {
           if (b.bossType === 'bsod') {
             b.fireCd = DB.BOSS_CFG.fireInterval;
-            for (let i = 0; i < 8; i++) {
-              const a = (i / 8) * Math.PI * 2 + state.t;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 8, life: 8 });
+            const count = 8 + Math.floor(state.wave / 2); // 弹幕数量增加
+            for (let i = 0; i < count; i++) {
+              const a = (i / count) * Math.PI * 2 + state.t;
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150 * speedScale, vy: Math.sin(a) * 150 * speedScale, r: 8, life: 8 });
             }
           } 
           else if (b.bossType === 'firewall') {
-            b.fireCd = 2.5;
+            b.fireCd = 2.5 / speedScale; // 射速加快
             const dx = p.x - b.x, dy = p.y - b.y;
             const d = Math.hypot(dx, dy) || 1;
-            for(let i=0; i<3; i++){
-               DB.enemyBullets.push({ x: b.x, y: b.y, vx: (dx/d)*250, vy: (dy/d)*250, r: 12, life: 6, color: '#ffaa00' });
+            const count = 3 + Math.floor(state.wave / 4);
+            for(let i=0; i<count; i++){
+               DB.enemyBullets.push({ x: b.x, y: b.y, vx: (dx/d)*250*speedScale, vy: (dy/d)*250*speedScale, r: 12, life: 6, color: '#ffaa00' });
             }
             DB.sfx.hurt();
           }
           else if (b.bossType === 'vampire') {
-            b.fireCd = 5.0; 
+            b.fireCd = 5.0 / speedScale; 
             let absorbed = false;
             for (let i = DB.weapons.length - 1; i >= 0; i--) {
               const w = DB.weapons[i];
@@ -327,7 +337,7 @@
                    DB.particles.push({ x: w.x, y: w.y, vx: (b.x - w.x)*2, vy: (b.y - w.y)*2, life: 0.5, maxLife: 0.5, size: 4, color: '#ff5a7a', spin: 0, rot: 0 });
                 }
                 DB.removeWeapon(w);
-                b.hp = Math.min(b.maxHp, b.hp + 50); 
+                b.hp = Math.min(b.maxHp, b.hp + 50 * waveScale); 
                 absorbed = true;
               }
             }
@@ -337,29 +347,31 @@
             }
           }
           else if (b.bossType === 'manager') {
-            b.fireCd = 1.5;
-            b.angle += 0.4;
-            for (let i = 0; i < 16; i++) {
-              const a = (i / 16) * Math.PI * 2 + b.angle;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, r: 6, life: 6, color: '#5ee6a8' });
+            b.fireCd = 1.5 / speedScale;
+            b.angle += 0.4 * speedScale;
+            const count = 16 + Math.floor(state.wave / 2);
+            for (let i = 0; i < count; i++) {
+              const a = (i / count) * Math.PI * 2 + b.angle;
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 220 * speedScale, vy: Math.sin(a) * 220 * speedScale, r: 6, life: 6, color: '#5ee6a8' });
             }
           }
           else if (b.bossType === 'trojan') {
-            b.fireCd = 0.2; 
-            b.angle += 0.8;
+            b.fireCd = Math.max(0.1, 0.2 / speedScale); 
+            b.angle += 0.8 * speedScale;
             for(let s=-1; s<=1; s+=2) {
               const a = b.angle * s;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, r: 8, life: 8, color: '#c08bff' });
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 180 * speedScale, vy: Math.sin(a) * 180 * speedScale, r: 8, life: 8, color: '#c08bff' });
             }
           }
         }
 
         b.summonCd -= dt;
         if (b.summonCd <= 0) {
-          b.summonCd = b.isBig ? 5.0 : 8.0;
-          const count = b.isBig ? 3 : 1;
+          b.summonCd = (b.isBig ? 5.0 : 8.0) / speedScale;
+          const count = (b.isBig ? 3 : 1) + Math.floor(state.wave / 5);
           for(let c=0; c<count; c++){
-            DB.enemies.push({ type: 'drone', x: b.x + (Math.random()-0.5)*100, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP, r: ENEMY_R, fireCd: 1.0, flashT: 0, frozen: 0 });
+            const hpMult = Math.pow(1.35, state.wave - 1);
+            DB.enemies.push({ type: 'drone', x: b.x + (Math.random()-0.5)*100, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP * hpMult, maxHp: ENEMY_HP * hpMult, r: ENEMY_R, fireCd: 1.0, flashT: 0, frozen: 0 });
           }
         }
       } 

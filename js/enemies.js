@@ -7,19 +7,22 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    hpPerWave:            1.5,    
-    enemyDmgPerWave:      0.20,   
-    bossDmgPerWave:       0.27,   
-    bossSpeedPerWave:     0.12,   
-    droneCountDiv:        3,
-    wormCountDiv:         3,
-    shieldCountDiv:       5,
-    turretCountDiv:       3,
-    chargerCountDiv:      3,
-    splitterCountDiv:     3,
+    hpPerWave:            0.45,
+    enemyDmgPerWave:      0.30,   // 伤害成长
+    bossDmgPerWave:       0.35,   
+    bossSpeedPerWave:     0.15,   
+    
+    // 怪物数量：分母变小，后期满屏怪
+    droneCountDiv:        2,      
+    wormCountDiv:         2,
+    shieldCountDiv:       2,
+    turretCountDiv:       2,
+    chargerCountDiv:      2,
+    splitterCountDiv:     2,
+    
     bossBulletDivDefault: 2,     
-    bossBulletDivFirewall: 4,     
-    bossSummonDiv:        5
+    bossBulletDivFirewall: 3,     
+    bossSummonDiv:        2       
   };
   const G = DB.GROWTH;
 
@@ -265,6 +268,22 @@
       floatText = '移速 +20% · 范围 +20'; floatColor = '#d08bff';
       state.flash = Math.max(state.flash, 0.25);
     }
+    else if (c.type === 'crit_dmg') {
+      mods.critDmg += 0.15;
+      floatText = '暴伤 +15%'; floatColor = '#ffcc00';
+    }
+    else if (c.type === 'crit_rate') {
+      mods.critRate += 0.05;
+      mods.critDmg += 0.10;
+      floatText = '暴击率 +5% · 暴伤 +10%'; floatColor = '#ffaa00';
+      state.flash = Math.max(state.flash, 0.18);
+    }
+    else if (c.type === 'lethal') {
+      mods.critRate += 0.10;
+      mods.critDmg += 0.30;
+      floatText = '暴击率 +10% · 暴伤 +30%'; floatColor = '#ff2a4a';
+      state.flash = Math.max(state.flash, 0.25);
+    }
 
     if (DB.floaters) DB.floaters.push({
       text: floatText, x: p.x, y: p.y - 40,
@@ -373,6 +392,28 @@
     DB.sfx.hurt();
     state.combo = 0;
   }
+
+  DB.calcWeaponDamage = function (baseDmg, targetX, targetY) {
+    // ===== 【新增】暴击率封顶 80% =====
+    let critRate = Math.min(0.80, 0.15 + (state.mods.critRate || 0)); 
+    
+    let critMult = 1.5 + (state.mods.critDmg || 0) + ((DB.upgrades.crit || 0) * 0.1);
+    
+    let isCrit = Math.random() < critRate;
+    let finalDmg = baseDmg * (isCrit ? critMult : 1);
+    
+    if (isCrit && DB.floaters) {
+      DB.floaters.push({ 
+        text: `暴击 -${Math.round(finalDmg)}!`, 
+        x: targetX + (Math.random() - 0.5) * 40, 
+        y: targetY - 30, vy: -60, life: 1.2, maxLife: 1.2, 
+        color: '#ffcc00', 
+        isCrit: true 
+      });
+      state.shake = Math.min(state.shake + 4, 20);
+    }
+    return finalDmg;
+  };
 
   function killEnemy(index) {
     const e = DB.enemies[index];
@@ -831,9 +872,10 @@
         const dx = w.x - b.x, dy = w.y - b.y;
         if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          const hitDmg = w.baseDamage * power * (1 + state.mods.damage);
+          // 【修复】调用暴击函数
+          const hitDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), b.x, b.y);
           b.hp -= hitDmg;
-          if (DB.floaters) DB.floaters.push({ text: `-${Math.round(hitDmg)}`, x: b.x + (Math.random() - 0.5) * 40, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+          // 删掉原来那句白字的 floaters push，因为 calcWeaponDamage 里已经处理了暴击飘字
           state.hitstop = Math.max(state.hitstop, 0.05);
           state.shake = Math.min(state.shake + 5, 22);
           DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
@@ -882,10 +924,11 @@
           }
 
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          const finalDmg = w.baseDamage * power * (1 + state.mods.damage);
+          // 【修复】调用暴击函数
+          const finalDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), e.x, e.y);
           e.hp -= finalDmg;
           e.flashT = 0.12;
-          if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+          // 删掉原来那句白字 floaters push
           state.hitstop = Math.max(state.hitstop, 0.045);
           state.shake   = Math.min(state.shake + 4, 22);
           DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);

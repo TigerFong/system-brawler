@@ -12,7 +12,7 @@
   let highestScore = parseInt(localStorage.getItem('sys_brawler_highscore') || '0', 10);
   let sysPoints = parseInt(localStorage.getItem('sys_brawler_points') || '0', 10);
   
-  const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0 };
+  const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
   let savedUpgrades = JSON.parse(localStorage.getItem('sys_brawler_upgrades') || '{}');
   DB.upgrades = { ...defaultUpgrades, ...savedUpgrades };
 
@@ -156,7 +156,7 @@
 
     const pointsText = document.getElementById('sys-points-text');
     const btnHp = document.getElementById('up-hp'), btnEnergy = document.getElementById('up-energy'), btnChip = document.getElementById('up-chip');
-    const btnWeapon = document.getElementById('up-weapon'), btnDuration = document.getElementById('up-duration'), btnDamage = document.getElementById('up-damage');
+    const btnWeapon = document.getElementById('up-weapon'), btnDuration = document.getElementById('up-duration'), btnDamage = document.getElementById('up-damage'), btnCrit = document.getElementById('up-crit');
 
     function getCost(type, level) {
       level = level || 0;
@@ -166,6 +166,7 @@
       if (type === 'weapon') return Math.floor(150 * (1.6 ** level));
       if (type === 'duration') return Math.floor(120 * (1.5 ** level));
       if (type === 'damage') return Math.floor(200 * (1.4 ** level));
+      if (type === 'crit') return Math.floor(150 * (1.4 ** level));
       return 9999;
     }
 
@@ -181,6 +182,8 @@
       btnWeapon.disabled = sysPoints < getCost('weapon', DB.upgrades.weapon) || DB.upgrades.weapon >= 10; btnWeapon.innerHTML = makeHTML('武器上限 +1', DB.upgrades.weapon, 10, getCost('weapon', DB.upgrades.weapon));
       btnDuration.disabled = sysPoints < getCost('duration', DB.upgrades.duration) || DB.upgrades.duration >= 10; btnDuration.innerHTML = makeHTML('武器存活 +2s', DB.upgrades.duration, 10, getCost('duration', DB.upgrades.duration));
       btnDamage.disabled = sysPoints < getCost('damage', DB.upgrades.damage) || DB.upgrades.damage >= 20; btnDamage.innerHTML = makeHTML('初始伤害 +10%', DB.upgrades.damage, 20, getCost('damage', DB.upgrades.damage));
+      btnCrit.disabled = sysPoints < getCost('crit', DB.upgrades.crit) || DB.upgrades.crit >= 20; 
+      if(btnCrit) btnCrit.innerHTML = makeHTML('暴击伤害 +10%', DB.upgrades.crit, 20, getCost('crit', DB.upgrades.crit));
     }
 
     function buyUpgrade(type, maxLv) {
@@ -195,6 +198,7 @@
 
     btnHp.onclick = () => buyUpgrade('hp', 99); btnEnergy.onclick = () => buyUpgrade('energy', 10); btnChip.onclick = () => buyUpgrade('chip', 30);
     btnWeapon.onclick = () => buyUpgrade('weapon', 10); btnDuration.onclick = () => buyUpgrade('duration', 10); btnDamage.onclick = () => buyUpgrade('damage', 20);
+    btnCrit.onclick = () => buyUpgrade('crit', 20);
   }
 
   /* ==================== 结算蓝屏 ==================== */
@@ -223,7 +227,7 @@
     state.hpMax = 100 + (DB.upgrades.hp * 20); state.hp = state.hpMax; state.energy = DB.upgrades.energy * 10;
     state.wave = 1; state.waveBreakT = 0; state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
     state.bossEnrageFlash = 0; state.bossEnrageTextT = 0;   // 【新增】清空狂暴特效计时
-    state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
+    state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
     state.skillCd = 0;
     state.skillActiveT = 0;
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
@@ -423,6 +427,15 @@
         if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 16; }
         if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 16; }
         if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 16; }
+        
+        // ===== 新增：暴击显示（封顶 80%） =====
+        const rawCritRate = 15 + Math.round((mods.critRate || 0) * 100);
+        const totalCritRate = Math.min(80, rawCritRate);
+        const isCritMax = rawCritRate >= 80 ? ' (MAX)' : '';
+        const totalCritDmg = 150 + Math.round((mods.critDmg || 0) * 100) + ((DB.upgrades.crit || 0) * 10);
+        
+        bgCtx.fillStyle = isCritMax ? '#ff7a9a' : '#ffcc00'; // 满暴击变粉色
+        bgCtx.fillText(`CRIT ${totalCritRate}%${isCritMax} / +${totalCritDmg}%`, 24, yy); 
       }
 
       // ===== 【新增】Boss 狂暴化大字提示 =====
@@ -457,7 +470,20 @@
     for (const f of DB.floaters) {
       fxCtx.globalAlpha = Math.min(1, f.life / (f.maxLife * 0.4));
       fxCtx.fillStyle = f.color; fxCtx.shadowColor = f.color; fxCtx.shadowBlur = 10;
-      fxCtx.fillText(f.text, f.x, f.y);
+      
+      if (f.isCrit) {
+        // 暴击专属：金色大字体，带缩放动画
+        fxCtx.save();
+        fxCtx.font = 'bold 24px ui-monospace, monospace';
+        fxCtx.translate(f.x, f.y);
+        const scale = 1.2 + Math.sin(f.life * 20) * 0.1;
+        fxCtx.scale(scale, scale);
+        fxCtx.fillText(f.text, 0, 0);
+        fxCtx.restore();
+      } else {
+        fxCtx.font = 'bold 16px ui-monospace, monospace';
+        fxCtx.fillText(f.text, f.x, f.y);
+      }
     }
     fxCtx.restore();
 

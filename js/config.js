@@ -56,14 +56,21 @@ window.DB = window.DB || {};
   };
 
 DB.ENEMY_CFG = {
-  droneHp: 30,
-  wormHp: 45,
-  shieldHp: 80,
+  droneHp: 120,      // 原 30
+  wormHp: 180,       // 原 45
+  shieldHp: 350,     // 原 80
   wormSpeed: 150,
-  // ===== 新增敌人数值 =====
-  chargerHp: 55,      // 冲锋者血量
-  turretHp: 90,       // 炮塔血量
-  splitterHp: 60      // 裂变体血量
+  chargerHp: 250,    // 原 55
+  turretHp: 400,     // 原 90
+  splitterHp: 220    // 原 60
+};
+
+DB.BOSS_CFG = {
+  smallHp: 15000,     // 原 1500
+  bigHp: 50000,       // 原 4000
+  radius: 80,
+  fireInterval: 2.0,    
+  summonInterval: 8.0  
 };
 
   DB.CHIP_TYPES = {
@@ -82,15 +89,12 @@ DB.ENEMY_CFG = {
 
     // ===== Epic（紫）：组合效果 =====
     bloodlust:{ label: 'BL+',   color: '#d08bff', rarity: 'epic',   desc: '伤害 +10% 且击杀恢复 5 HP' },
-    move3:    { label: 'SWIFT', color: '#d08bff', rarity: 'epic',   desc: '移速 +20% 且抓取范围 +20' }  // 新增
-  };
+    move3:    { label: 'SWIFT', color: '#d08bff', rarity: 'epic',   desc: '移速 +20% 且抓取范围 +20' },  // 新增
 
-  DB.BOSS_CFG = {
-    smallHp: 1500,
-    bigHp: 4000,
-    radius: 80,
-    fireInterval: 2.0,    
-    summonInterval: 8.0  
+    // ===== 暴击专属芯片 =====
+    crit_dmg:  { label: 'CRIT', color: '#ffcc00', rarity: 'common', desc: '暴击伤害 +15%' },
+    crit_rate: { label: 'CRIT%', color: '#ffaa00', rarity: 'rare', desc: '暴击率 +5% · 暴伤 +10%' },
+    lethal:    { label: 'LETHAL', color: '#ff2a4a', rarity: 'epic', desc: '暴击率 +10% · 暴伤 +30%' }
   };
   
   DB.SMALL_BOSS_TYPES = ['bsod', 'firewall', 'vampire'];

@@ -481,7 +481,7 @@
               state.shake = Math.min(state.shake + 8, 25);
               DB.spawnParticles(e.x, e.y, 25, '#c08bff', 500);
 
-              const finalDmg = w.baseDamage * 4.0 * (1 + state.mods.damage);
+              const finalDmg = DB.calcWeaponDamage(w.baseDamage * 4.0 * (1 + state.mods.damage), e.x, e.y);
 
               if (w.type === 'light_dart') {
                 const dmg = finalDmg * 2.0;

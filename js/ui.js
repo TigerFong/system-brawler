@@ -126,6 +126,33 @@
         energyText.style.color = '#c08bff';
       }
     }
+    // ===== 移动端虚拟按钮状态同步 =====
+    const mobSkill = document.querySelector('.skill-btn');
+    if (mobSkill) {
+      const isReady = state.skillCd <= 0;
+      mobSkill.style.color = isReady ? '#ffcc00' : '#777';
+      mobSkill.style.borderColor = isReady ? '#ffcc00' : '#555';
+      mobSkill.style.boxShadow = isReady ? '0 0 15px rgba(255,204,0,0.5)' : 'none';
+      mobSkill.textContent = isReady ? '技能' : Math.ceil(state.skillCd) + 's';
+    }
+
+    const mobUlts = document.querySelectorAll('.ult-btn');
+    if (mobUlts.length > 0) {
+      const ultReady = state.energy >= state.energyMax;
+      mobUlts.forEach(btn => {
+        if (ultReady) {
+          btn.style.color = '#dff3ff';
+          btn.style.borderColor = '#5ae8ff';
+          btn.style.background = 'rgba(90,240,255,0.3)'; // 亮起时的底色
+          btn.style.boxShadow = '0 0 15px rgba(90,240,255,0.8)';
+        } else {
+          btn.style.color = '#777';
+          btn.style.borderColor = '#555';
+          btn.style.background = 'rgba(0,0,0,0.6)'; // 未亮时的暗底色
+          btn.style.boxShadow = 'none';
+        }
+      });
+    }
   };
 
 })(window.DB);

@@ -15,9 +15,8 @@
   const FIRE_INTERVAL = 2.2;
   const BULLET_SPEED  = 260;
   const BULLET_R      = 6;
-  const BULLET_DMG    = 8;
   const BULLET_LIFE   = 6;
-  const CHIP_LIFETIME  = 14;
+  const CHIP_LIFETIME = 14;
 
   DB.spawnWave = function (n) {
     const camX = state.camera.x;
@@ -27,10 +26,12 @@
     const minY = DB.clamp(camY - 100, CFG.PLAY_TOP, CFG.GROUND_Y);
     const maxY = DB.clamp(camY + CFG.VIEW_H, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    // ===== 调整：怪物血量成长放缓到 1.35，移速不变 =====
-    const hpMult = Math.pow(1.35, n - 1);     
-    const speedMult = 1.0; 
+    // ===== 调整：怪物血量成长放缓到 1.28 =====
+    const hpMult = Math.pow(1.28, n - 1);     
     
+    // 小怪子弹基础伤害随波次成长
+    const waveDmgMult = 1 + (n - 1) * 0.15; 
+
     const droneCount = 2 + Math.floor(n / 3);
     const wormCount  = 1 + Math.floor(n / 3);
     const shieldCount = 1 + Math.floor(n / 5); 
@@ -44,6 +45,7 @@
         hp: Math.floor(ENEMY_HP * hpMult),
         maxHp: Math.floor(ENEMY_HP * hpMult),
         r: ENEMY_R,
+        dmg: Math.floor(10 * waveDmgMult), // 子弹伤害成长
         fireCd: 0.8 + Math.random() * 1.6, flashT: 0, frozen: 0
       });
     }
@@ -58,7 +60,8 @@
         hp: Math.floor(DB.ENEMY_CFG.wormHp * hpMult),
         maxHp: Math.floor(DB.ENEMY_CFG.wormHp * hpMult),
         r: 22,
-        speed: DB.ENEMY_CFG.wormSpeed * speedMult, 
+        speed: DB.ENEMY_CFG.wormSpeed, 
+        dmg: Math.floor(18 * waveDmgMult), // 碰撞伤害成长
         seed: Math.random() * 100, flashT: 0, frozen: 0,
         phase: Math.random() * Math.PI * 2
       });
@@ -74,7 +77,8 @@
         hp: Math.floor(DB.ENEMY_CFG.shieldHp * hpMult),
         maxHp: Math.floor(DB.ENEMY_CFG.shieldHp * hpMult),
         r: 28,
-        speed: 60 * speedMult, 
+        speed: 60, 
+        dmg: Math.floor(22 * waveDmgMult), // 碰撞伤害成长
         seed: Math.random() * 100, flashT: 0, frozen: 0,
         facing: fromLeft ? 1 : -1
       });
@@ -88,8 +92,8 @@
     const typePool = isBig ? DB.BIG_BOSS_TYPES : DB.SMALL_BOSS_TYPES;
     const bossType = typePool[Math.floor(Math.random() * typePool.length)];
     
-    // ===== 调整：Boss 血量放缓到 1.4 倍，配合玩家成长 =====
-    const waveMult = Math.pow(1.4, state.wave - 1);
+    // ===== 调整：Boss 血量放缓到 1.32 倍 =====
+    const waveMult = Math.pow(1.32, state.wave - 1);
     const baseHp = isBig ? DB.BOSS_CFG.bigHp : DB.BOSS_CFG.smallHp;
     const hp = Math.floor(baseHp * waveMult);
 
@@ -97,17 +101,12 @@
     const startY = camY + 200;
 
     DB.boss = {
-      x: startX, 
-      y: startY,
-      baseX: startX,
-      baseY: startY,
+      x: startX, y: startY, baseX: startX, baseY: startY,
       hp: hp, maxHp: hp,
       r: isBig ? DB.BOSS_CFG.radius * 1.2 : DB.BOSS_CFG.radius,
-      isBig: isBig,
-      bossType: bossType,
+      isBig: isBig, bossType: bossType,
       fireCd: 2.0, summonCd: 3.0, phase: 'normal', flashT: 0, frozen: 0,
-      seed: Math.random() * 100,
-      angle: 0
+      seed: Math.random() * 100, angle: 0
     };
     state.qte.active = false;
     state.hp = Math.min(state.hpMax, state.hp + state.hpMax * 0.5);
@@ -127,15 +126,9 @@
     
     let floatText = '', floatColor = '#ffffff';
 
-    if (c.type === 'damage') { 
-      mods.damage += 0.05; floatText = '伤害 +5%'; floatColor = '#ff7a9a'; 
-    }
-    else if (c.type === 'grab') { 
-      mods.grab += 15; floatText = '范围 +15'; floatColor = '#5ae8ff'; 
-    }
-    else if (c.type === 'launch') { 
-      mods.launch += 0.05; floatText = '弹射 +5%'; floatColor = '#c08bff'; 
-    }
+    if (c.type === 'damage') { mods.damage += 0.05; floatText = '伤害 +5%'; floatColor = '#ff7a9a'; }
+    else if (c.type === 'grab') { mods.grab += 15; floatText = '范围 +15'; floatColor = '#5ae8ff'; }
+    else if (c.type === 'launch') { mods.launch += 0.05; floatText = '弹射 +5%'; floatColor = '#c08bff'; }
     else if (c.type === 'heal') { 
       state.hp = Math.min(state.hpMax, state.hp + 15); floatText = '+15 HP'; floatColor = '#5ee6a8';
       state.flash = Math.max(state.flash, 0.15); DB.spawnParticles(p.x, p.y, 20, '#5ee6a8', 300);
@@ -199,8 +192,7 @@
 
   function killEnemy(index) {
     const e = DB.enemies[index];
-    if (!e) return;
-    if (e.dead) return;
+    if (!e || e.dead) return;
     e.dead = true;
 
     const color = e.type === 'worm' ? '#5ee6a8' : (e.type === 'shield' ? '#a88bff' : '#ff7a9a');
@@ -261,7 +253,7 @@
   DB.updateEnemies = function (dt) {
     const p = DB.player;
 
-    // 每帧强制清理血量异常或为负数的僵尸怪
+    // 每帧强制清理僵尸怪
     for (let i = DB.enemies.length - 1; i >= 0; i--) {
       const e = DB.enemies[i];
       if (e.hp <= 0 || isNaN(e.hp)) {
@@ -299,26 +291,27 @@
         b.y = b.baseY + Math.sin(state.t * 0.8) * 30;
         b.fireCd -= dt;      
         
-        // ===== 核心修改：Boss 攻击力随波次提升 =====
-        const waveScale = 1 + (state.wave - 1) * 0.1; // 攻击强度倍率
-        const speedScale = 1 + (state.wave - 1) * 0.05; // 弹幕速度倍率
+        // ===== 攻击全面膨胀：速度+射速+弹幕数量+子弹伤害 =====
+        const waveScale = 1 + (state.wave - 1) * 0.15; 
+        const speedScale = 1 + (state.wave - 1) * 0.08; 
+        const bossDmg = Math.floor(20 * waveScale); // Boss子弹基础伤害
 
         if (b.fireCd <= 0) {
           if (b.bossType === 'bsod') {
-            b.fireCd = DB.BOSS_CFG.fireInterval;
-            const count = 8 + Math.floor(state.wave / 2); // 弹幕数量增加
+            b.fireCd = DB.BOSS_CFG.fireInterval / speedScale;
+            const count = 8 + Math.floor(state.wave / 2);
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2 + state.t;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150 * speedScale, vy: Math.sin(a) * 150 * speedScale, r: 8, life: 8 });
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 150 * speedScale, vy: Math.sin(a) * 150 * speedScale, r: 8, life: 8, dmg: bossDmg });
             }
           } 
           else if (b.bossType === 'firewall') {
-            b.fireCd = 2.5 / speedScale; // 射速加快
+            b.fireCd = 2.5 / speedScale; 
             const dx = p.x - b.x, dy = p.y - b.y;
             const d = Math.hypot(dx, dy) || 1;
             const count = 3 + Math.floor(state.wave / 4);
             for(let i=0; i<count; i++){
-               DB.enemyBullets.push({ x: b.x, y: b.y, vx: (dx/d)*250*speedScale, vy: (dy/d)*250*speedScale, r: 12, life: 6, color: '#ffaa00' });
+               DB.enemyBullets.push({ x: b.x, y: b.y, vx: (dx/d)*250*speedScale, vy: (dy/d)*250*speedScale, r: 12, life: 6, color: '#ffaa00', dmg: bossDmg * 1.5 });
             }
             DB.sfx.hurt();
           }
@@ -327,15 +320,11 @@
             let absorbed = false;
             for (let i = DB.weapons.length - 1; i >= 0; i--) {
               const w = DB.weapons[i];
-              if (w.dead || w.held || w.warning > 0) continue;
-              if (w.safeTimer > 0) continue; 
+              if (w.dead || w.held || w.warning > 0 || w.safeTimer > 0) continue; 
 
               const distToBoss = Math.hypot(w.x - b.x, w.y - b.y);
               if (distToBoss < 600) {
                 DB.spawnParticles(w.x, w.y, 15, '#ff7a9a', 400);
-                for(let k=0; k<5; k++){
-                   DB.particles.push({ x: w.x, y: w.y, vx: (b.x - w.x)*2, vy: (b.y - w.y)*2, life: 0.5, maxLife: 0.5, size: 4, color: '#ff5a7a', spin: 0, rot: 0 });
-                }
                 DB.removeWeapon(w);
                 b.hp = Math.min(b.maxHp, b.hp + 50 * waveScale); 
                 absorbed = true;
@@ -352,7 +341,7 @@
             const count = 16 + Math.floor(state.wave / 2);
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2 + b.angle;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 220 * speedScale, vy: Math.sin(a) * 220 * speedScale, r: 6, life: 6, color: '#5ee6a8' });
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 220 * speedScale, vy: Math.sin(a) * 220 * speedScale, r: 6, life: 6, color: '#5ee6a8', dmg: bossDmg * 0.8 });
             }
           }
           else if (b.bossType === 'trojan') {
@@ -360,7 +349,7 @@
             b.angle += 0.8 * speedScale;
             for(let s=-1; s<=1; s+=2) {
               const a = b.angle * s;
-              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 180 * speedScale, vy: Math.sin(a) * 180 * speedScale, r: 8, life: 8, color: '#c08bff' });
+              DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 180 * speedScale, vy: Math.sin(a) * 180 * speedScale, r: 8, life: 8, color: '#c08bff', dmg: bossDmg * 0.7 });
             }
           }
         }
@@ -370,8 +359,15 @@
           b.summonCd = (b.isBig ? 5.0 : 8.0) / speedScale;
           const count = (b.isBig ? 3 : 1) + Math.floor(state.wave / 5);
           for(let c=0; c<count; c++){
-            const hpMult = Math.pow(1.35, state.wave - 1);
-            DB.enemies.push({ type: 'drone', x: b.x + (Math.random()-0.5)*100, y: b.y + 60, baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, hp: ENEMY_HP * hpMult, maxHp: ENEMY_HP * hpMult, r: ENEMY_R, fireCd: 1.0, flashT: 0, frozen: 0 });
+            const hpMult = Math.pow(1.28, state.wave - 1);
+            const waveDmgMult = 1 + (state.wave - 1) * 0.15;
+            DB.enemies.push({ 
+              type: 'drone', x: b.x + (Math.random()-0.5)*100, y: b.y + 60, 
+              baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, 
+              hp: ENEMY_HP * hpMult, maxHp: ENEMY_HP * hpMult, r: ENEMY_R, 
+              dmg: Math.floor(10 * waveDmgMult),
+              fireCd: 1.0, flashT: 0, frozen: 0 
+            });
           }
         }
       } 
@@ -409,7 +405,7 @@
           const dx = p.x - e.x, dy = p.y - e.y;
           const d = Math.hypot(dx, dy) || 1;
           const bulletColor = state.mode === 'hacker' ? '#5ee6a8' : '#ff5a7a';
-          DB.enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * BULLET_SPEED, vy: (dy / d) * BULLET_SPEED, r: BULLET_R, life: BULLET_LIFE, color: bulletColor });
+          DB.enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * BULLET_SPEED, vy: (dy / d) * BULLET_SPEED, r: BULLET_R, life: BULLET_LIFE, color: bulletColor, dmg: e.dmg });
         }
       } 
       else if (e.type === 'worm') {
@@ -420,7 +416,7 @@
         const speed = (e.speed || DB.ENEMY_CFG.wormSpeed) * (1 + Math.sin(e.phase) * 0.15) * speedMult;
         e.x += (dx / d) * speed * dt;
         e.y += (dy / d) * speed * dt;
-        if (d < e.r + p.r) { damagePlayer(12, e.x, e.y); killEnemy(i); }
+        if (d < e.r + p.r) { damagePlayer(e.dmg, e.x, e.y); killEnemy(i); }
       }
       else if (e.type === 'shield') {
         const dx = p.x - e.x, dy = p.y - e.y;
@@ -429,7 +425,7 @@
         const moveSpeed = (e.speed || 60) * ((e.slowT > 0) ? 0.4 : 1.0);
         e.x += (dx / d) * moveSpeed * dt;
         e.y += (dy / d) * moveSpeed * dt;
-        if (d < e.r + p.r) damagePlayer(15, e.x, e.y);
+        if (d < e.r + p.r) damagePlayer(e.dmg, e.x, e.y);
       }
     }
 
@@ -438,7 +434,7 @@
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       const dx = b.x - p.x, dy = b.y - p.y;
       if (dx * dx + dy * dy < (b.r + p.r) * (b.r + p.r)) {
-        damagePlayer(BULLET_DMG, b.x, b.y);
+        damagePlayer(b.dmg || 10, b.x, b.y); // 使用子弹自身伤害
         DB.enemyBullets.splice(i, 1);
         continue;
       }

@@ -4,6 +4,15 @@
   const CFG = DB.CFG;
 
   DB.spawnParticles = function (x, y, count, color, speed) {
+    // ===== 【防卡死保护】如果当前粒子超过 1500，强制削减生成数量 =====
+    if (DB.particles.length > 1500) {
+      count = Math.min(count, 2);
+      if (Math.random() > 0.5) return; // 超过1500时，有50%概率不生成
+    } else if (DB.particles.length > 800) {
+      count = Math.min(count, 5);
+    }
+    // =========================================================
+
     for (let i = 0; i < count; i++) {
       const a  = Math.random() * Math.PI * 2;
       const sp = speed * (0.25 + Math.random() * 0.9);

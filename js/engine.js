@@ -72,16 +72,49 @@
   /* ==================== 标题画面 ==================== */
   let currentMode = 'defender';
   const RULES_DEFENDER = `
-    <div class="rule-row"><span class="key">WASD</span><span class="txt">走位躲避弹幕</span></div>
-    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取系统模块 · 向后拉 · 松手弹射</span></div>
-    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放大招 / Boss瘫痪时处决</span></div>
-    <div class="rule-row"><span class="key">目标</span><span class="txt">清空波次 · 用模块砸碎病毒</span></div>
+    <div style="color:#5ae8ff; font-weight:bold; margin-bottom:8px; border-bottom:1px dashed rgba(90,240,255,0.3); padding-bottom:4px;">🛡️ 安全卫士操作指南</div>
+    <div class="rule-row"><span class="key">WASD</span><span class="txt">移动走位，躲避弹幕</span></div>
+    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取模块，向后拉弓，松手弹射</span></div>
+    
+    <div style="color:#ffcc00; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(255,204,0,0.3); padding-bottom:4px;">⚡ 核心技能</div>
+    <div class="rule-row"><span class="key">SHIFT</span><span class="txt"><b>全息反射盾</b>：1.5秒内减伤80%，且子弹碰到护盾会被粉碎并反伤周围敌人。</span></div>
+    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放大招；Boss瘫痪时处决</span></div>
+
+    <div style="color:#d08bff; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(208,139,255,0.3); padding-bottom:4px;">💎 芯片增益</div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      击杀掉落芯片。白色（基础数值），蓝色（如吸血、移速加成），<b>紫色（双重强力增益）</b>。
+    </div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      注意：掉落的模块如果变成红色 <b>⚠ ERROR</b>，切勿抓取，会扣血！
+    </div>
+
+    <div style="color:#ff5a7a; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:4px;">⚠ 高危警告</div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      小心固定炮塔和高机动冲锋者。当 <b>Boss 血量低于 25%</b> 时触发狂暴，全屏爆发弹幕，做好按 SHIFT 硬抗的准备！
+    </div>
   `;
+
   const RULES_HACKER = `
-    <div class="rule-row"><span class="key">WASD</span><span class="txt">走位躲避杀毒软件</span></div>
-    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒 · 拖拽到敌人身上直接引爆</span></div>
-    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放全屏大招 / Boss瘫痪时处决</span></div>
-    <div class="rule-row"><span class="key">目标</span><span class="txt">清空波次 · 發射病毒炸碎卫士</span></div>
+    <div style="color:#ff5a7a; font-weight:bold; margin-bottom:8px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:4px;">😈 黑客入侵指南</div>
+    <div class="rule-row"><span class="key">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
+    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒，拖拽到敌人身上，直接引爆</span></div>
+    
+    <div style="color:#ffcc00; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(255,204,0,0.3); padding-bottom:4px;">⚡ 核心技能</div>
+    <div class="rule-row"><span class="key">SHIFT</span><span class="txt"><b>病毒引爆</b>：清空全屏子弹，感染所有敌人。带有病毒的敌人死亡会引发<b>连环爆炸传染</b>。</span></div>
+    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放大招；Boss瘫痪时处决</span></div>
+
+    <div style="color:#d08bff; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(208,139,255,0.3); padding-bottom:4px;">💎 芯片增益</div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      击杀掉落芯片。白色（基础数值），蓝色（如吸血、移速加成），<b>紫色（双重强力增益）</b>。
+    </div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      注意：掉落的武器如果变成红色 <b>⚠ ERROR</b>，切勿抓取，会扣血！
+    </div>
+
+    <div style="color:#ff5a7a; font-weight:bold; margin-top:12px; margin-bottom:8px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:4px;">⚠ 高危警告</div>
+    <div class="rule-row"><span class="txt" style="font-size:12px; line-height:1.4;">
+      小心点杀炮塔和裂变体。当 <b>Boss 血量低于 25%</b> 时触发狂暴，全屏爆发弹幕，留好 SHIFT 技能保命！
+    </div>
   `;
 
   function showTitle() { dom.titleEl.classList.remove('hidden'); }
@@ -191,7 +224,8 @@
     state.wave = 1; state.waveBreakT = 0; state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
     state.bossEnrageFlash = 0; state.bossEnrageTextT = 0;   // 【新增】清空狂暴特效计时
     state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
-    
+    state.skillCd = 0;
+    state.skillActiveT = 0;
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
 
     DB.player.x = W * 0.34; DB.player.y = 600; DB.player.vx = 0; DB.player.vy = 0;
@@ -367,7 +401,19 @@
         }
         bgCtx.restore();
       }
+
+      // ===== 【新增】技能冷却显示 =====
+      bgCtx.textAlign = 'left';
+      bgCtx.font = 'bold 12px ui-monospace, monospace';
+      bgCtx.shadowBlur = 0;
+      const isDef = state.mode === 'defender';
+      const skillName = isDef ? '[SHIFT] 全息反射盾' : '[SHIFT] 病毒引爆';
+      const cdText = state.skillCd <= 0 ? 'READY' : state.skillCd.toFixed(1) + 's';
+      const cdColor = state.skillCd <= 0 ? (isDef ? '#5ae8ff' : '#ffcc00') : 'rgba(150, 150, 150, 0.6)';
       
+      bgCtx.fillStyle = cdColor;
+      bgCtx.fillText(`${skillName}  -  ${cdText}`, 24, VH - 24);
+
       const mods = state.mods;
       if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0) {
         bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
@@ -433,6 +479,15 @@
     }
   }
 
+  /* ==================== 初始化与缩放 ==================== */
+  function resize() { 
+    // 计算比例：根据窗口宽高缩放到刚好能放下 1280x720
+    const s = Math.min(window.innerWidth / VW, window.innerHeight / VH); 
+    dom.stage.style.transform = `scale(${s})`; 
+  }
+  window.addEventListener('resize', resize); 
+  resize();
+
   /* ==================== 输入 ==================== */
   function toWorld(cx, cy) { 
     const r = dom.stage.getBoundingClientRect(); 
@@ -444,6 +499,7 @@
   function bindInput() {
     const mouse = DB.mouse, trail = DB.trail, keys = DB.keys;
 
+    // ===== 电脑端鼠标与键盘事件 =====
     dom.stage.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn')) { if (state.scene === 'title') return; }
@@ -473,43 +529,150 @@
 
       const k = e.key.toLowerCase();
       if (k === 'w' || k === 'a' || k === 's' || k === 'd') { keys.add(k); e.preventDefault(); return; }
-
-      if (k >= '0' && k <= '9') {
-        if (state.qte.active) {
-          const targetChar = state.qte.sequence[state.qte.inputIndex];
-          if (k === targetChar) {
-            state.qte.inputIndex++; DB.sfx.grab(); state.shake = Math.min(state.shake + 2, 10);
-            if (state.qte.inputIndex >= state.qte.sequence.length) {
-              state.qte.active = false; DB.boss = null;
-              state.bossEnrageTextT = 0;      // 【新增】QTE 成功 → 清空狂暴文字
-              state.bossEnrageFlash = 0;      // 【新增】QTE 成功 → 清空狂暴闪光
-              state.flash = 1.0; state.shake = 40; state.hitstop = 0.2;
-              for (let i = 0; i < 120; i++) {
-                DB.particles.push({ x: W/2 + (Math.random()-0.5)*600, y: 100 + Math.random()*500, vx: (Math.random()-0.5)*100, vy: 300 + Math.random()*500, life: 1.5, maxLife: 1.5, size: 4 + Math.random()*6, color: '#5ee6a8', spin: 0, rot: 0 });
-              }
-              
-              state.hp = state.hpMax;
-              state.energy = state.energyMax;
-              for (let i = 0; i < 15; i++) {
-                const angle = (i / 15) * Math.PI * 2;
-                const dist = 100 + Math.random() * 150;
-                DB.spawnChip(DB.player.x + Math.cos(angle) * dist, DB.player.y + Math.sin(angle) * dist);
-              }
-              for (let i = 0; i < 3; i++) {
-                const w = DB.spawnWeapon('fire_shield');
-                if (w) w.warning = 0.001;
-              }
-
-              DB.sfx.clear(); state.waveBreakT = 4.0;
-            }
-          } else {
-            state.qte.inputIndex = 0; state.qte.timer -= 1.0; state.damageFlash = 0.4; state.shake = 20; DB.sfx.error();
-          }
-        } else { if (k >= '1' && k <= '4') DB.tryUltimate(k); }
-        e.preventDefault();
-      }
+      if (k === 'shift') { DB.triggerShift(); e.preventDefault(); return; }
+      if (k >= '0' && k <= '9') { DB.handleNumberKey(k); e.preventDefault(); }
     });
     window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+    // ===== 手机端触屏事件 =====
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (isMobile) {
+      document.getElementById('mobile-ui').style.display = 'block';
+      const joyZone = document.getElementById('joy-zone');
+      const joyStick = document.getElementById('joy-stick');
+      let joyTouchId = null;
+      let joyCenterX = 0, joyCenterY = 0;
+      let aimTouchId = null;
+
+      // 控制摇杆移动
+      function handleJoyMove(cx, cy) {
+        let dx = cx - joyCenterX;
+        let dy = cy - joyCenterY;
+        const dist = Math.hypot(dx, dy);
+        const maxDist = 40;
+        if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
+        joyStick.style.transform = `translate(${dx}px, ${dy}px)`;
+        
+        keys.clear();
+        if (dx < -10) keys.add('a');
+        if (dx > 10) keys.add('d');
+        if (dy < -10) keys.add('w');
+        if (dy > 10) keys.add('s');
+      }
+
+      // 触摸摇杆
+      joyZone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        joyTouchId = t.identifier;
+        const rect = joyZone.getBoundingClientRect();
+        joyCenterX = rect.left + rect.width / 2;
+        joyCenterY = rect.top + rect.height / 2;
+        handleJoyMove(t.clientX, t.clientY);
+      });
+
+      // 全屏触摸（处理移动和瞄准）
+      window.addEventListener('touchstart', (e) => {
+        if (e.target.closest('#action-zone') || e.target.closest('#qte-zone') || e.target.closest('#joy-zone')) return;
+        
+        if (state.scene === 'title') { startGame(); return; }
+        if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
+
+        if (aimTouchId === null) {
+          const t = e.changedTouches[0];
+          aimTouchId = t.identifier;
+          const p = toWorld(t.clientX, t.clientY);
+          mouse.x = p.x; mouse.y = p.y; mouse.down = true;
+          trail.length = 0; trail.push({ x: p.x, y: p.y, t: performance.now() });
+          DB.tryGrab(p.x, p.y);
+        }
+      }, { passive: false });
+
+      window.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === joyTouchId) {
+            handleJoyMove(t.clientX, t.clientY);
+          } else if (t.identifier === aimTouchId) {
+            const p = toWorld(t.clientX, t.clientY);
+            mouse.x = p.x; mouse.y = p.y;
+            trail.push({ x: p.x, y: p.y, t: performance.now() }); while (trail.length > 14) trail.shift();
+          }
+        }
+      }, { passive: false });
+
+      window.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === joyTouchId) {
+            joyTouchId = null; joyStick.style.transform = `translate(0px, 0px)`; keys.clear();
+          } else if (t.identifier === aimTouchId) {
+            aimTouchId = null; mouse.down = false; DB.releaseThrow();
+          }
+        }
+      });
+
+      // 监听 QTE 状态，切换虚拟键盘显示
+      setInterval(() => {
+        document.getElementById('qte-zone').style.display = state.qte.active ? 'flex' : 'none';
+      }, 100);
+    }
+
+    // ===== 提取复用的按键逻辑 =====
+    DB.triggerShift = function() {
+      if (state.skillCd <= 0 && state.scene === 'playing') {
+        if (state.mode === 'defender') {
+          state.skillActiveT = 1.5; state.skillCd = 5.0; state.flash = Math.max(state.flash, 0.15);
+          DB.spawnParticles(DB.player.x, DB.player.y, 30, '#5ae8ff', 300); DB.sfx.chip();
+        } else {
+          DB.enemyBullets.length = 0; 
+          for (const en of DB.enemies) {
+            const blastDmg = 40 + (state.wave * 5) + (state.combo * 2);
+            en.hp -= blastDmg; en.flashT = 0.2; en.virus = true; 
+            DB.spawnParticles(en.x, en.y, 15, '#ffcc00', 400);
+          }
+          if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= (40 + state.wave * 5); DB.boss.flashT = 0.2; }
+          state.skillCd = 6.0; state.flash = Math.max(state.flash, 0.4); state.shake = 25; state.hitstop = 0.1; DB.sfx.error();
+        }
+      }
+    };
+
+    DB.handleNumberKey = function(k) {
+      if (state.qte.active) {
+        const targetChar = state.qte.sequence[state.qte.inputIndex];
+        if (k === targetChar) {
+          state.qte.inputIndex++; DB.sfx.grab(); state.shake = Math.min(state.shake + 2, 10);
+          if (state.qte.inputIndex >= state.qte.sequence.length) {
+            state.qte.active = false; DB.boss = null;
+            state.bossEnrageTextT = 0; state.bossEnrageFlash = 0; 
+            state.flash = 1.0; state.shake = 40; state.hitstop = 0.2;
+            for (let i = 0; i < 120; i++) {
+              DB.particles.push({ x: W/2 + (Math.random()-0.5)*600, y: 100 + Math.random()*500, vx: (Math.random()-0.5)*100, vy: 300 + Math.random()*500, life: 1.5, maxLife: 1.5, size: 4 + Math.random()*6, color: '#5ee6a8', spin: 0, rot: 0 });
+            }
+            state.hp = state.hpMax; state.energy = state.energyMax;
+            for (let i = 0; i < 15; i++) {
+              const angle = (i / 15) * Math.PI * 2; const dist = 100 + Math.random() * 150;
+              DB.spawnChip(DB.player.x + Math.cos(angle) * dist, DB.player.y + Math.sin(angle) * dist);
+            }
+            for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('fire_shield'); if (w) w.warning = 0.001; }
+            DB.sfx.clear(); state.waveBreakT = 4.0;
+          }
+        } else {
+          state.qte.inputIndex = 0; state.qte.timer -= 1.0; state.damageFlash = 0.4; state.shake = 20; DB.sfx.error();
+        }
+      } else {
+        if (k >= '1' && k <= '4') DB.tryUltimate(k);
+      }
+    };
+
+    DB.handleMobileKey = function(key) {
+      if (state.scene === 'title') { startGame(); return; }
+      if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
+      if (key === 'shift') DB.triggerShift();
+      else DB.handleNumberKey(key);
+    };
   }
 
   /* ==================== 主循环 ==================== */
@@ -533,6 +696,10 @@
     state.shake *= Math.exp(-9 * realDt); if (state.shake < 0.15) state.shake = 0;
     state.flash *= Math.exp(-11 * realDt); if (state.flash < 0.004) state.flash = 0;
     state.damageFlash *= Math.exp(-10 * realDt); if (state.damageFlash < 0.004) state.damageFlash = 0;
+    
+    // ===== 【新增】技能冷却计算 =====
+    if (state.skillCd > 0) state.skillCd -= realDt;
+    if (state.skillActiveT > 0) state.skillActiveT -= realDt;
     // ===== 【新增】狂暴特效衰减 =====
     state.bossEnrageFlash *= Math.exp(-6 * realDt); if (state.bossEnrageFlash < 0.004) state.bossEnrageFlash = 0;
     if (state.bossEnrageTextT > 0) state.bossEnrageTextT = Math.max(0, state.bossEnrageTextT - realDt);
@@ -556,10 +723,6 @@
 
     update(dt); render(); DB.updateHUD(); requestAnimationFrame(frame);
   }
-
-  /* ==================== 初始化 ==================== */
-  function resize() { const s = Math.min(window.innerWidth / VW, window.innerHeight / VH); dom.stage.style.transform = `scale(${s})`; }
-  window.addEventListener('resize', resize); resize();
 
   function init() {
     initBackground(); DB.buildHUD(); bindTitleEvents(); resetWorld(false); bindInput();

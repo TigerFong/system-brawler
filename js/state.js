@@ -13,9 +13,13 @@
     
     camera: { x: 0, y: 0 },
 
-    // ===== 【新增】Boss 狂暴化特效计时器 =====
-    bossEnrageFlash: 0,   // 全屏红色闪烁强度（指数衰减）
-    bossEnrageTextT: 0    // 中央文字显示剩余秒数
+    // ===== Boss 狂暴化特效计时器 =====
+    bossEnrageFlash: 0,   
+    bossEnrageTextT: 0,   
+    
+    // ===== 阵营专属技能状态 =====
+    skillCd: 0,       // 技能冷却
+    skillActiveT: 0   // 技能持续时间
   };
 
   DB.player = {

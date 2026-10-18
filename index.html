@@ -100,6 +100,39 @@
   </div>
 </div>
 
+  <!-- 移动端触屏控制 UI -->
+  <div id="mobile-ui" style="display: none;">
+    <!-- 左侧虚拟摇杆 -->
+    <div id="joy-zone">
+      <div id="joy-stick"></div>
+    </div>
+    
+    <!-- 右侧技能按钮 -->
+    <div id="action-zone">
+      <button class="mob-btn skill-btn" onclick="window.DB.handleMobileKey('shift')">技能</button>
+      <div id="ult-zone">
+        <button class="mob-btn ult-btn" onclick="window.DB.handleMobileKey('1')">1</button>
+        <button class="mob-btn ult-btn" onclick="window.DB.handleMobileKey('2')">2</button>
+        <button class="mob-btn ult-btn" onclick="window.DB.handleMobileKey('3')">3</button>
+        <button class="mob-btn ult-btn" onclick="window.DB.handleMobileKey('4')">4</button>
+      </div>
+    </div>
+
+    <!-- QTE 专用数字键盘（默认隐藏） -->
+    <div id="qte-zone" style="display: none;">
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('1')">1</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('2')">2</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('3')">3</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('4')">4</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('5')">5</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('6')">6</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('7')">7</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('8')">8</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('9')">9</button>
+      <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('0')">0</button>
+    </div>
+  </div>
+
 <!-- 加载顺序即依赖顺序，切勿随意调整 -->
 <script src="js/config.js"></script>
 <script src="js/dom.js"></script>

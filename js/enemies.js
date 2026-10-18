@@ -6,35 +6,19 @@
   const W     = CFG.W;
   const H     = CFG.H;
 
-  // ============================================================
-  // 【膨胀参数集中区】—— 所有难度曲线都在这一个对象里
-  // 修改后刷新浏览器即生效；想实时调可在控制台改 DB.GROWTH.xxx
-  // ============================================================
   DB.GROWTH = {
-    // ---- 血量：小怪 / Boss / 召唤物 / 分体 共用 ----
-    hpPerWave:            1.5,   // 每波血量 +25% 基础值
-
-    // ---- 伤害成长 ----
-    enemyDmgPerWave:      0.20,   // 小怪 / 召唤物 / 分体 伤害成长
-    bossDmgPerWave:       0.27,   // Boss 弹幕伤害成长
-
-    // ---- Boss 弹幕速度 & 攻击频率 ----
-    // 注意：此系数双向影响——弹幕速度 ×它，攻击间隔 ÷它
-    bossSpeedPerWave:     0.12,
-
-    // ---- 小怪数量增长（分母越大增长越慢）----
+    hpPerWave:            1.5,    
+    enemyDmgPerWave:      0.20,   
+    bossDmgPerWave:       0.27,   
+    bossSpeedPerWave:     0.12,   
     droneCountDiv:        3,
     wormCountDiv:         3,
     shieldCountDiv:       5,
     turretCountDiv:       3,
     chargerCountDiv:      3,
     splitterCountDiv:     3,
-
-    // ---- Boss 弹幕数量增长（分母越大增长越慢）----
-    bossBulletDivDefault:  2,     // bsod / manager 使用
-    bossBulletDivFirewall: 4,     // firewall 使用
-
-    // ---- Boss 召唤数量增长 ----
+    bossBulletDivDefault: 2,     
+    bossBulletDivFirewall: 4,     
     bossSummonDiv:        5
   };
   const G = DB.GROWTH;
@@ -205,15 +189,11 @@
 
   DB.spawnChip = function (x, y) {
     const wave = state.wave;
-
-    // 稀有度权重：随波次动态变化（高波次偏向稀有）
     const weights = {
       common: Math.max(30, 65 - wave * 1.5),
       rare:   Math.min(50, 30 + wave * 0.8),
       epic:   Math.min(25,  5 + wave * 0.5)
     };
-
-    // 按权重选稀有度
     const total = weights.common + weights.rare + weights.epic;
     let roll = Math.random() * total;
     let rarity = 'common';
@@ -221,7 +201,6 @@
     else if (roll < weights.common + weights.rare) rarity = 'rare';
     else rarity = 'epic';
 
-    // 该稀有度池中随机抽一个
     const pool = Object.keys(DB.CHIP_TYPES).filter(k => DB.CHIP_TYPES[k].rarity === rarity);
     const type = pool[Math.floor(Math.random() * pool.length)];
 
@@ -323,20 +302,17 @@
       const bob = Math.sin(state.t * 4 + c.seed) * 3;
       const x = c.x, y = c.y + bob;
 
-      // 稀有度光环颜色 / 强度
       const isEpic   = c.rarity === 'epic';
       const isRare   = c.rarity === 'rare';
       const glowSize = isEpic ? 32 : (isRare ? 26 : 22);
       const glowStr  = isEpic ? 'aa' : (isRare ? '77' : '55');
 
-      // 外发光
       const g = ctx.createRadialGradient(x, y, 0, x, y, glowSize);
       g.addColorStop(0, cfg.color + glowStr);
       g.addColorStop(1, cfg.color + '00');
       ctx.fillStyle = g;
       ctx.fillRect(x - glowSize, y - glowSize, glowSize * 2, glowSize * 2);
 
-      // Epic 额外旋转光环
       if (isEpic) {
         ctx.save();
         ctx.translate(x, y);
@@ -356,7 +332,6 @@
         ctx.restore();
       }
 
-      // 主体菱形（Epic 略大）
       const sizeMul = isEpic ? 1.3 : (isRare ? 1.15 : 1);
       ctx.save();
       ctx.translate(x, y);
@@ -369,7 +344,6 @@
       ctx.lineTo(0, 10 * sizeMul);   ctx.lineTo(-10 * sizeMul, 0);
       ctx.closePath();
       ctx.fill();
-      // 白色内芯（Epic/Rare 更亮）
       if (isEpic || isRare) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.shadowBlur = 0;
@@ -383,8 +357,16 @@
 
   function damagePlayer(dmg, px, py) {
     if (state.gameOver || state.scene !== 'playing') return;
-    state.hp = Math.max(0, state.hp - dmg);
-    state.damageFlash = Math.max(state.damageFlash, 0.5);
+    
+    let finalDmg = dmg;
+    if (state.mode === 'defender' && state.skillActiveT > 0) {
+      finalDmg *= 0.2; 
+      DB.spawnParticles(px, py, 10, '#5ae8ff', 300); 
+      if (DB.floaters) DB.floaters.push({ text: 'BLOCKED', x: px, y: py - 20, vy: -50, life: 0.8, maxLife: 0.8, color: '#5ae8ff' });
+    }
+
+    state.hp = Math.max(0, state.hp - finalDmg);
+    state.damageFlash = Math.max(state.damageFlash, finalDmg > 0 ? 0.5 : 0.1);
     state.shake   = Math.min(state.shake + 10, 30);
     state.hitstop = Math.max(state.hitstop, 0.05);
     DB.spawnParticles(px, py, 12, '#ff5a7a', 300);
@@ -422,14 +404,37 @@
     state.comboTimer = 3.0;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
     state.score += 100 * state.combo;
-    // 【新增】吸血芯片生效
-    if (state.mods.lifesteal > 0 && state.hp < state.hpMax) {
+    
+    if ((state.mods.lifesteal || 0) > 0 && state.hp < state.hpMax) {
       const healAmt = Math.min(state.mods.lifesteal, state.hpMax - state.hp);
       state.hp += healAmt;
       if (DB.floaters) DB.floaters.push({
         text: `+${Math.round(healAmt)} HP`, x: DB.player.x, y: DB.player.y - 30,
         vy: -40, life: 0.9, maxLife: 0.9, color: '#ff5a7a'
       });
+    }
+
+    // ===== 【防卡死重构】黑客专属：病毒连环引爆 =====
+    if (state.mode === 'hacker' && e.virus) {
+      const blastRadius = 160;
+      const blastDmg = 30 + (state.wave * 5);
+      let hitCount = 0;
+      
+      for (const other of DB.enemies) {
+        if (other.dead || other === e) continue;
+        const dx = other.x - e.x, dy = other.y - e.y;
+        if (dx * dx + dy * dy < blastRadius * blastRadius) {
+          other.hp -= blastDmg;
+          other.flashT = 0.15;
+          other.virus = true; 
+          hitCount++;
+          // 【关键】不要在这里调 killEnemy，而是交由主循环清理！
+        }
+      }
+      DB.spawnParticles(e.x, e.y, 30, '#ffcc00', 600);
+      if (hitCount > 0 && DB.floaters) {
+        DB.floaters.push({ text: `连环引爆 x${hitCount}`, x: e.x, y: e.y - 40, vy: -50, life: 1.2, maxLife: 1.2, color: '#ffcc00' });
+      }
     }
 
     const idx = DB.enemies.indexOf(e);
@@ -760,15 +765,42 @@
       }
     }
 
+    // ===== 子弹碰撞与护盾反弹 =====
     for (let i = DB.enemyBullets.length - 1; i >= 0; i--) {
       const b = DB.enemyBullets[i];
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       const dx = b.x - p.x, dy = b.y - p.y;
-      if (dx * dx + dy * dy < (b.r + p.r) * (b.r + p.r)) {
-        damagePlayer(b.dmg || 10, b.x, b.y);
-        DB.enemyBullets.splice(i, 1);
-        continue;
+      
+      const isShielding = state.mode === 'defender' && state.skillActiveT > 0;
+      const hitRadius = isShielding ? 60 : p.r;
+      
+      if (dx * dx + dy * dy < (b.r + hitRadius) * (b.r + hitRadius)) {
+        if (isShielding) {
+          DB.enemyBullets.splice(i, 1);
+          DB.spawnParticles(b.x, b.y, 15, '#5ae8ff', 400);
+          DB.sfx.hit();
+          
+          const reflectDmg = (b.dmg || 10) * 2;
+          for (const e of DB.enemies) {
+            if (Math.hypot(e.x - b.x, e.y - b.y) < 150) {
+              e.hp -= reflectDmg;
+              e.flashT = 0.15;
+            }
+          }
+          if (DB.boss && DB.boss.phase === 'normal') {
+            if (Math.hypot(DB.boss.x - b.x, DB.boss.y - b.y) < 150) {
+              DB.boss.hp -= reflectDmg;
+              DB.boss.flashT = 0.15;
+            }
+          }
+          continue;
+        } else {
+          damagePlayer(b.dmg || 10, b.x, b.y);
+          DB.enemyBullets.splice(i, 1);
+          continue;
+        }
       }
+      
       if (b.life <= 0 || b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
         DB.enemyBullets.splice(i, 1);
       }

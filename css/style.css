@@ -11,7 +11,10 @@ html, body {
 
 #viewport {
   position: fixed; inset: 0;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  background: #000; /* 黑边 */
   overflow: hidden;
 }
 
@@ -19,10 +22,10 @@ html, body {
   position: relative;
   width: 1280px; height: 720px;
   transform-origin: center center;
-  background:
-    radial-gradient(ellipse at 50% 35%, #1a1130 0%, #0c0818 55%, #05030b 100%);
+  background: radial-gradient(ellipse at 50% 35%, #1a1130 0%, #0c0818 55%, #05030b 100%);
   overflow: hidden;
   cursor: crosshair;
+  flex-shrink: 0; /* 防止被压缩 */
 }
 
 #world { position: absolute; inset: 0; will-change: transform; }
@@ -48,7 +51,7 @@ canvas.layer {
   font-size: 11px; font-weight: 700; letter-spacing: 1px;
   color: #a8f0ff;
   border: 1.5px solid rgba(90, 240, 255, .65);
-  border-radius: 20px; /* 圆角胶囊感 */
+  border-radius: 20px; 
   background: linear-gradient(135deg, rgba(20, 60, 100, 0.95), rgba(10, 20, 40, 0.98));
   box-shadow:
     0 0 14px rgba(90, 240, 255, .25),
@@ -242,7 +245,7 @@ canvas.layer {
   font-size: 54px;
   font-weight: 800;
   letter-spacing: 14px;
-  padding-left: 14px;              /* 补偿 letter-spacing 的右侧空隙 */
+  padding-left: 14px;              
   color: #dff3ff;
   text-shadow:
     0 0 26px rgba(90, 240, 255, 0.75),
@@ -491,8 +494,11 @@ canvas.layer {
   border-radius: 12px;
   padding: 30px 40px;
   width: 560px;
+  max-width: 90vw; 
   position: relative;
   animation: modalIn 0.2s ease-out;
+  max-height: 85vh;       
+  overflow-y: auto; 
 }
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
@@ -525,8 +531,8 @@ canvas.layer {
 
 /* ---------- 黑客模式专属：金色武器外观 ---------- */
 .weapon.hacker-weapon {
-  color: #ffcc00; /* 亮金色文字 */
-  border-color: rgba(255, 204, 0, 0.8); /* 金色边框 */
+  color: #ffcc00; 
+  border-color: rgba(255, 204, 0, 0.8); 
   background: linear-gradient(180deg, rgba(80, 60, 10, 0.95), rgba(30, 20, 5, 0.98));
   box-shadow:
     0 0 15px rgba(255, 204, 0, 0.4),
@@ -543,3 +549,82 @@ canvas.layer {
   border-color: #ffffff;
   box-shadow: 0 0 30px rgba(255, 204, 0, 1), 0 0 0 2px rgba(255, 255, 255, 0.8) inset;
 }
+
+/* =========================================
+   响应式适配（移动端 / 小窗口弹窗优化）
+   ========================================= */
+@media (max-width: 768px) {
+  #modal-content {
+    padding: 20px 24px;
+  }
+  .title-action-btn {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+  .mode-card {
+    width: 160px;
+    padding: 15px 10px;
+  }
+  .mode-icon { font-size: 24px; }
+  .mode-name { font-size: 14px; }
+  #terminal {
+    width: 90vw;
+  }
+}
+
+@media (max-height: 600px) {
+  #title-screen {
+    justify-content: flex-start;
+    padding-top: 40px;
+    overflow-y: auto;
+  }
+  .title-big { font-size: 36px; }
+  .mode-select { margin-top: 20px; margin-bottom: 10px; }
+  .title-start { margin-top: 20px; }
+}
+
+/* =========================================
+   移动端专属 UI 样式
+   ========================================= */
+#mobile-ui {
+  position: fixed; inset: 0; z-index: 999; pointer-events: none;
+}
+
+#joy-zone {
+  position: absolute; left: 5%; bottom: 5%; width: 120px; height: 120px;
+  border-radius: 50%; background: rgba(255,255,255,0.05); border: 2px solid rgba(90,240,255,0.3);
+  pointer-events: auto;
+}
+#joy-stick {
+  position: absolute; left: 30px; top: 30px; width: 60px; height: 60px;
+  border-radius: 50%; background: rgba(90, 240, 255, 0.5); pointer-events: none;
+  box-shadow: 0 0 15px rgba(90,240,255,0.8);
+  transition: transform 0.05s linear;
+}
+
+#action-zone {
+  position: absolute; right: 5%; bottom: 5%; display: flex; flex-direction: column; gap: 15px; align-items: flex-end; pointer-events: auto;
+}
+#ult-zone { display: flex; gap: 10px; }
+
+.mob-btn {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); border: 2px solid #5ae8ff; color: #fff;
+  font-size: 16px; font-weight: bold; font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 10px rgba(90,240,255,0.4);
+  cursor: pointer; user-select: none;
+}
+.mob-btn:active { transform: scale(0.9); background: rgba(90,240,255,0.3); }
+
+.skill-btn {
+  width: 70px; height: 70px; border-color: #ffcc00; color: #ffcc00;
+  box-shadow: 0 0 15px rgba(255,204,0,0.5);
+}
+
+#qte-zone {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, 20%);
+  display: flex; flex-wrap: wrap; gap: 15px; width: 240px; justify-content: center; pointer-events: auto;
+  background: rgba(0,0,0,0.8); padding: 20px; border-radius: 12px; border: 2px solid #ff5a7a;
+}
+.qte-btn { border-color: #ff5a7a; box-shadow: 0 0 10px rgba(255,90,122,0.5); }

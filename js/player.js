@@ -64,17 +64,15 @@
     ctx.fillStyle = g;
     ctx.fillRect(p.x - 76, p.y - 76, 152, 152);
 
-    // ===== 抓取范围环（明显增强版） =====
+    // ===== 抓取范围环 =====
     const range = CFG.GRAB_RANGE + (state.mods ? state.mods.grab : 0);
     
     ctx.save();
-    // 1. 内圈极淡底色
     ctx.fillStyle = `rgba(${mainColor}, ${0.03 + pulse * 0.02})`;
     ctx.beginPath();
     ctx.arc(p.x, p.y, range, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. 外圈虚线边界（更亮）
     ctx.strokeStyle = `rgba(${mainColor}, ${0.4 + pulse * 0.3})`;
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 12]);
@@ -112,6 +110,36 @@
     ctx.rect(-s * 0.42, -s * 0.42, s * 0.84, s * 0.84);
     ctx.fill();
     ctx.restore();
+
+    // ===== 【新增】防守方全息反射盾视觉 =====
+    if (state.mode === 'defender' && state.skillActiveT > 0) {
+      ctx.save();
+      const shieldPulse = Math.sin(t * 30) * 0.1 + 1;
+      ctx.strokeStyle = `rgba(90, 232, 255, ${Math.min(1, state.skillActiveT)})`;
+      ctx.fillStyle = `rgba(90, 232, 255, 0.15)`;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#5ae8ff';
+      ctx.shadowBlur = 30;
+      
+      // 外圈防护罩
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 60 * shieldPulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // 内圈六边形能量矩阵
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + t * 3;
+        const px = p.x + Math.cos(a) * 60 * shieldPulse;
+        const py = p.y + Math.sin(a) * 60 * shieldPulse;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
   };
 
 })(window.DB);

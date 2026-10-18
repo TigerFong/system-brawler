@@ -13,31 +13,25 @@
     return n;
   }
 
-  /* ---------- 动态生成点（仅限当前屏幕视野） ---------- */
+  /* ---------- 动态生成点 ---------- */
   function pickSpawnPoint() {
     const camX = DB.state.camera.x;
     const camY = DB.state.camera.y;
     
-    // 计算当前屏幕内的安全范围（留出四周边缘 Margin 100px）
     const marginX = 120;
     const marginY = 120;
     const viewMinX = DB.clamp(camX + marginX, 0, CFG.W - marginX * 2);
     const viewMaxX = DB.clamp(camX + CFG.VIEW_W - marginX, marginX * 2, CFG.W);
-    
-    // 底部要避开底部终端 UI（留出 180px）
     const viewMinY = DB.clamp(camY + marginY, CFG.PLAY_TOP, CFG.GROUND_Y - marginY * 2);
     const viewMaxY = DB.clamp(camY + CFG.VIEW_H - 180, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    // 最多尝试 15 次，找一个距离玩家和怪都适中的点
     for (let attempt = 0; attempt < 15; attempt++) {
       const px = viewMinX + Math.random() * (viewMaxX - viewMinX);
       const py = viewMinY + Math.random() * (viewMaxY - viewMinY);
       
-      // 不能离玩家太近（避免刚掉下来就被抓），也不能太远（屏幕边缘可能抓不到）
       const distToPlayer = Math.hypot(px - DB.player.x, py - DB.player.y);
       if (distToPlayer < 150 || distToPlayer > CFG.GRAB_RANGE * 1.8) continue;
 
-      // 不能直接掉在怪物的脸上（120px 判定）
       let safe = true;
       for (const e of DB.enemies) {
         if (Math.hypot(px - e.x, py - e.y) < 150) { safe = false; break; }
@@ -45,7 +39,6 @@
       if (safe) return { x: px, y: py };
     }
     
-    // 如果实在找不到（比如满屏都是怪），就随机落在玩家周围
     return {
       x: DB.player.x + (Math.random() > 0.5 ? 1 : -1) * (200 + Math.random() * 200),
       y: DB.clamp(DB.player.y + (Math.random() - 0.5) * 300, CFG.PLAY_TOP, CFG.GROUND_Y)
@@ -67,7 +60,7 @@
     const w = {
       id: DB.nextUid(),
       type, def,
-      baseDamage: def.damage * (1 + (DB.upgrades ? DB.upgrades.damage : 0) * 0.1),
+      baseDamage: def.damage * (1 + (DB.upgrades && DB.upgrades.damage ? DB.upgrades.damage : 0) * 0.1) || def.damage,
       x: p.x, y: p.y,
       vx: 0, vy: 0,
       rot: 0, rotV: 0,
@@ -89,10 +82,18 @@
     return w;
   };
 
-  /* ---------- DOM ---------- */
   function createWeaponEl(w) {
     const el = document.createElement('div');
     el.className = 'weapon';
+    
+    if (state.mode === 'hacker') {
+      el.style.color = '#ffcc00';
+      el.style.borderColor = 'rgba(255, 204, 0, 0.8)';
+      el.style.background = 'linear-gradient(180deg, rgba(80, 60, 10, 0.95), rgba(30, 20, 5, 0.98))';
+      el.style.boxShadow = '0 0 15px rgba(255, 204, 0, 0.4), 0 0 5px rgba(255, 204, 0, 0.6) inset, 0 6px 18px rgba(0, 0, 0, 0.6)';
+      el.style.textShadow = '0 0 8px rgba(255, 204, 0, 0.8)';
+    }
+    
     el.style.width  = w.def.w + 'px';
     el.style.height = w.def.h + 'px';
     el.textContent = w.def.label;
@@ -129,7 +130,8 @@
     for (const w of DB.weapons) {
       if (w.dead || w.warning > 0 || w.held) continue;
       const d = Math.hypot(w.x - mx, w.y - my);
-      if (d < w.r + CFG.GRAB_PICK_R && d < bestD) {
+      const pickR = state.mode === 'hacker' ? CFG.GRAB_PICK_R + 20 : CFG.GRAB_PICK_R;
+      if (d < w.r + pickR && d < bestD) {
         bestD = d;
         best = w;
       }
@@ -158,9 +160,7 @@
 
     best.held   = true;
     best.thrown = false;
-    best.vx = 0;
-    best.vy = 0;
-    best.rotV = 0;
+    best.vx = 0; best.vy = 0; best.rotV = 0;
     
     if (state.mode !== 'hacker') {
       best.anchorX = best.x;
@@ -181,12 +181,35 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
+    // ===== 黑客：指哪打哪，从当前位置直线飞出 =====
     if (state.mode === 'hacker') {
-      w.thrown = false;
-      w.vx = 0; w.vy = 0; w.rotV = 0;
+      const p = DB.player;
+      const mouse = DB.mouse;
+      const dx = mouse.x - p.x; 
+      const dy = mouse.y - p.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < 30) {
+        w.thrown = false;
+        w.vx = 0; w.vy = 0;
+      } else {
+        w.thrown = true;
+        w.age = 0;
+        
+        // 极速直线飞出
+        const speed = 1800; 
+        w.vx = (dx / dist) * speed;
+        w.vy = (dy / dist) * speed;
+        w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20;
+        
+        state.shake = Math.min(state.shake + 4, 15);
+        DB.spawnParticles(w.x, w.y, 10, '#ffcc00', 300);
+        DB.sfx.throw();
+      }
       return;
     }
 
+    // ===== 防守方：拉弓 =====
     const SL = CFG.SLINGSHOT;
     const dx = w.x - w.anchorX;
     const dy = w.y - w.anchorY;
@@ -238,6 +261,7 @@
       const e = DB.enemies[i];
       e.hp -= dmg;
       e.flashT = 0.15;
+      if (DB.floaters) DB.floaters.push({ text: `-${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffcc00' });
       if (e.hp <= 0) {
         const color = e.type === 'worm' ? '#5ee6a8' : '#ff7a9a';
         DB.spawnParticles(e.x, e.y, 24, color, 460);
@@ -251,8 +275,7 @@
       const a = Math.random() * Math.PI * 2;
       const sp = 600 + Math.random() * 400;
       DB.particles.push({
-        x: cx, y: cy,
-        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
         life: 0.6, maxLife: 0.6, size: 5 + Math.random() * 5,
         color: '#ffcc00', spin: 0, rot: a
       });
@@ -304,58 +327,14 @@
         const mouse = DB.mouse;
         
         if (state.mode === 'hacker') {
+          // 黑客：跟随鼠标
           const k = 1 - Math.exp(-30 * dt);
           w.x += (mouse.x - w.x) * k;
           w.y += (mouse.y - w.y) * k;
           w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
           w.vx = 0; w.vy = 0;
-
-          let hitSomething = false;
-          
-          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
-            const e = DB.enemies[ei];
-            if (Math.hypot(w.x - e.x, w.y - e.y) < w.r + e.r) {
-              DB.damageEnemy(e, ei, w.baseDamage, w.def.effect === 'earthquake');
-              DB.removeWeapon(w);
-              DB.heldWeapon = null;
-              hitSomething = true;
-              break;
-            }
-          }
-
-          if (!hitSomething && DB.boss && DB.boss.phase === 'normal') {
-            const b = DB.boss;
-            if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r) {
-              b.hp -= w.baseDamage * 1.2 * (1 + state.mods.damage);
-              b.flashT = 0.15;
-              state.hitstop = Math.max(state.hitstop, 0.08);
-              state.shake = Math.min(state.shake + 8, 25);
-              DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
-              DB.sfx.hit();
-              
-              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.baseDamage);
-              
-              DB.removeWeapon(w);
-              DB.heldWeapon = null;
-              hitSomething = true;
-              
-              if (b.hp <= 0) {
-                b.hp = 0;
-                b.phase = 'paralyzed';
-                state.qte.active = true;
-                state.qte.timer = 8.0;
-                state.qte.inputIndex = 0;
-                let seq = "";
-                for(let k=0; k<6; k++) seq += Math.floor(Math.random() * 10);
-                state.qte.sequence = seq;
-                state.flash = 0.5;
-                state.hitstop = 0.15;
-              }
-            }
-          }
-
-          if (hitSomething) continue;
         } else {
+          // 防守方：拉弓限制
           let tx = mouse.x;
           let ty = mouse.y;
           const ddx = tx - w.anchorX;
@@ -393,13 +372,143 @@
         }
       }
       else {
-        w.vy += CFG.GRAVITY * dt;
-        w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
+        // ===== 飞行物理 =====
+        if (w.homing) {
+          // 追踪导弹物理
+          let target = w.homingTarget;
+          
+          if (!target || target.hp <= 0 || (target !== DB.boss && DB.enemies.indexOf(target) === -1)) {
+            let minDist = Infinity;
+            for (const e of DB.enemies) {
+              const d = Math.hypot(w.x - e.x, w.y - e.y);
+              if (d < minDist) { minDist = d; target = e; }
+            }
+            if (!target && DB.boss && DB.boss.phase === 'normal') target = DB.boss;
+            w.homingTarget = target;
+          }
+
+          if (target) {
+            const dx = target.x - w.x, dy = target.y - w.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const speed = 1500;
+            const targetVx = (dx / d) * speed;
+            const targetVy = (dy / d) * speed;
+            w.vx += (targetVx - w.vx) * Math.min(1, 20 * dt);
+            w.vy += (targetVy - w.vy) * Math.min(1, 20 * dt);
+            w.rot = Math.atan2(w.vy, w.vx) + Math.PI / 4; 
+          } else {
+            w.homing = false;
+          }
+        } else {
+          if (state.mode === 'hacker') {
+            // 黑客无重力直线飞刀
+            w.vy += CFG.GRAVITY * 0.1 * dt; 
+            w.vx *= Math.exp(-0.2 * dt); 
+          } else {
+            // 防守方常规物理
+            w.vy += CFG.GRAVITY * dt;
+            w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
+          }
+        }
 
         w.x += w.vx * dt;
         w.y += w.vy * dt;
-        w.rot += w.rotV * dt;
+        if (!w.homing) w.rot += w.rotV * dt;
 
+        // ===== 命中判定 =====
+        if (state.mode === 'hacker' && w.thrown) {
+          let hitSomething = false;
+          const hitRadiusBonus = w.homing ? 30 : 15;
+
+          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
+            const e = DB.enemies[ei];
+            if (Math.hypot(w.x - e.x, w.y - e.y) < w.r + e.r + hitRadiusBonus) {
+              DB.sfx.error();
+              state.hitstop = Math.max(state.hitstop, 0.06);
+              state.shake = Math.min(state.shake + 8, 25);
+              DB.spawnParticles(e.x, e.y, 25, '#c08bff', 500);
+
+              const finalDmg = w.baseDamage * 4.0 * (1 + state.mods.damage);
+
+              if (w.type === 'light_dart') {
+                const dmg = finalDmg * 2.0;
+                DB.damageEnemy(e, ei, dmg, false);
+                if (e.hp > 0) e.vulnerable = 5.0;
+                if (DB.floaters) DB.floaters.push({ text: `防御瓦解 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ff7a9a' });
+              } 
+              else if (w.type === 'stun_chip') {
+                DB.damageEnemy(e, ei, finalDmg, false);
+                if (e.hp > 0) e.slowT = 5.0;
+                if (DB.floaters) DB.floaters.push({ text: `系统卡顿 -${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ae8ff' });
+              } 
+              else if (w.type === 'fire_shield') {
+                const dmg = finalDmg * 3 + (e.maxHp * 0.15);
+                DB.damageEnemy(e, ei, dmg, false);
+                if (DB.floaters) DB.floaters.push({ text: `文件加密 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffcc00' });
+              } 
+              else if (w.type === 'link') {
+                DB.damageEnemy(e, ei, finalDmg, false);
+                if (e.hp > 0) {
+                  const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
+                  const pd = Math.hypot(pdx, pdy) || 1;
+                  e.x += (pdx / pd) * 200; 
+                  e.y += (pdy / pd) * 200;
+                  e.vulnerable = 3.0;
+                }
+                if (DB.floaters) DB.floaters.push({ text: `强制牵引 -${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#c08bff' });
+              } 
+              else if (w.type === 'gravity') {
+                const dmg = finalDmg * 4;
+                DB.damageEnemy(e, ei, dmg, true); 
+                state.energy = Math.min(state.energyMax, state.energy + 20);
+                if (DB.floaters) DB.floaters.push({ text: `数据窃取 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ee6a8' });
+              }
+
+              DB.removeWeapon(w);
+              hitSomething = true;
+              break;
+            }
+          }
+
+          if (hitSomething) continue;
+
+          // 打 Boss
+          if (DB.boss && DB.boss.phase === 'normal') {
+            const b = DB.boss;
+            if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r + hitRadiusBonus) {
+              const finalDmg = w.baseDamage * 4.0 * (1 + state.mods.damage);
+              b.hp -= finalDmg;
+              b.flashT = 0.15;
+              state.hitstop = Math.max(state.hitstop, 0.08);
+              state.shake = Math.min(state.shake + 8, 25);
+              DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
+              DB.sfx.hit();
+              
+              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: b.x, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+
+              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.baseDamage);
+              
+              DB.removeWeapon(w);
+              
+              if (b.hp <= 0) {
+                b.hp = 0;
+                b.phase = 'paralyzed';
+                state.qte.active = true;
+                state.qte.timer = b.isBig ? 9.0 : 7.0;
+                state.qte.inputIndex = 0;
+                const seqLen = b.isBig ? 8 : 6;
+                let seq = "";
+                for(let k=0; k<seqLen; k++) seq += Math.floor(Math.random() * 10);
+                state.qte.sequence = seq;
+                state.flash = 0.5;
+                state.hitstop = 0.15;
+              }
+              continue;
+            }
+          }
+        }
+
+        // 地面与墙壁碰撞反弹
         const floorY = CFG.GROUND_Y - w.def.h * 0.32;
         if (w.y > floorY) {
           w.y = floorY;
@@ -486,7 +595,7 @@
     }
   };
 
-  /* ---------- 皮筋绘制 ---------- */
+  /* ---------- 瞄准线与皮筋绘制 ---------- */
   DB.drawGrabBeam = function (ctx) {
     const w = DB.heldWeapon;
     if (!w) return;
@@ -498,18 +607,32 @@
     const by = w.y;
 
     if (state.mode === 'hacker') {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255, 90, 122, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([10, 10]);
-      ctx.lineDashOffset = -state.t * 100;
-      ctx.shadowColor = '#ff5a7a';
-      ctx.shadowBlur = 15;
-      ctx.beginPath();
-      ctx.moveTo(DB.player.x, DB.player.y);
-      ctx.lineTo(bx, by);
-      ctx.stroke();
-      ctx.restore();
+      const p = DB.player;
+      const mouse = DB.mouse;
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      
+      // 画一条从玩家穿过鼠标的极长虚线
+      if (dist > 30) {
+        const dirX = dx / dist;
+        const dirY = dy / dist;
+        const len = 2000; // 足够长的瞄准线
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 204, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.lineDashOffset = -state.t * 60;
+        ctx.shadowColor = '#ffcc00';
+        ctx.shadowBlur = 10;
+        
+        ctx.beginPath();
+        ctx.moveTo(p.x + dirX * 40, p.y + dirY * 40); // 从玩家前方开始
+        ctx.lineTo(p.x + dirX * len, p.y + dirY * len); // 无限延伸
+        ctx.stroke();
+        ctx.restore();
+      }
       return;
     }
 

@@ -81,7 +81,7 @@
     <div class="rule-row"><span class="key">WASD</span><span class="txt">走位躲避杀毒软件</span></div>
     <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒 · 拖拽到敌人身上直接引爆</span></div>
     <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放全屏大招 / Boss瘫痪时处决</span></div>
-    <div class="rule-row"><span class="key">目标</span><span class="txt">清空波次 · 拖拽病毒炸碎卫士</span></div>
+    <div class="rule-row"><span class="key">目标</span><span class="txt">清空波次 · 發射病毒炸碎卫士</span></div>
   `;
 
   function showTitle() { dom.titleEl.classList.remove('hidden'); }
@@ -290,11 +290,19 @@
         
         bgCtx.font = 'bold 12px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
         let bossName = 'UNKNOWN';
-        if (DB.boss.bossType === 'bsod') bossName = '蓝屏死机核心';
-        if (DB.boss.bossType === 'firewall') bossName = '防火墙巨像';
-        if (DB.boss.bossType === 'vampire') bossName = '内存吸血鬼';
-        if (DB.boss.bossType === 'manager') bossName = '安全管家 (大Boss)';
-        if (DB.boss.bossType === 'trojan') bossName = '木马母体 (大Boss)';
+        if (state.mode === 'hacker') {
+          if (DB.boss.bossType === 'bsod') bossName = '防火墙矩阵';
+          if (DB.boss.bossType === 'firewall') bossName = '查杀引擎主脑';
+          if (DB.boss.bossType === 'vampire') bossName = '隔离沙盒';
+          if (DB.boss.bossType === 'manager') bossName = '系统总控 (大Boss)';
+          if (DB.boss.bossType === 'trojan') bossName = '根权限守卫 (大Boss)';
+        } else {
+          if (DB.boss.bossType === 'bsod') bossName = '蓝屏死机核心';
+          if (DB.boss.bossType === 'firewall') bossName = '防火墙巨像';
+          if (DB.boss.bossType === 'vampire') bossName = '内存吸血鬼';
+          if (DB.boss.bossType === 'manager') bossName = '安全管家 (大Boss)';
+          if (DB.boss.bossType === 'trojan') bossName = '木马母体 (大Boss)';
+        }
         if (DB.boss.phase === 'paralyzed') bossName = 'SYSTEM HALTED';
         
         bgCtx.fillText(bossName, VW / 2, barY + 10);
@@ -347,8 +355,13 @@
 
       if (!state.qte.active) {
         bgCtx.save(); bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'right'; bgCtx.fillStyle = 'rgba(150, 200, 255, 0.6)';
-        bgCtx.fillText('[4] 核心熔毁', VW - 26, VH - 105); bgCtx.fillText('[3] 系统重载', VW - 26, VH - 120);
-        bgCtx.fillText('[2] 时间凝滞', VW - 26, VH - 135); bgCtx.fillText('[1] 代码暴雨', VW - 26, VH - 150);
+        if (state.mode === 'hacker') {
+          bgCtx.fillText('[4] 万剑归宗', VW - 26, VH - 105); bgCtx.fillText('[3] 紧急重启', VW - 26, VH - 120);
+          bgCtx.fillText('[2] 冻结协议', VW - 26, VH - 135); bgCtx.fillText('[1] 逻辑炸弹', VW - 26, VH - 150);
+        } else {
+          bgCtx.fillText('[4] 核心熔毁', VW - 26, VH - 105); bgCtx.fillText('[3] 系统重载', VW - 26, VH - 120);
+          bgCtx.fillText('[2] 时间凝滞', VW - 26, VH - 135); bgCtx.fillText('[1] 代码暴雨', VW - 26, VH - 150);
+        }
         bgCtx.restore();
       }
       

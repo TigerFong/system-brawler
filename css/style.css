@@ -522,3 +522,24 @@ canvas.layer {
 .up-cost {
   font-size: 11px; color: #aaa;
 }
+
+/* ---------- 黑客模式专属：金色武器外观 ---------- */
+.weapon.hacker-weapon {
+  color: #ffcc00; /* 亮金色文字 */
+  border-color: rgba(255, 204, 0, 0.8); /* 金色边框 */
+  background: linear-gradient(180deg, rgba(80, 60, 10, 0.95), rgba(30, 20, 5, 0.98));
+  box-shadow:
+    0 0 15px rgba(255, 204, 0, 0.4),
+    0 0 5px rgba(255, 204, 0, 0.6) inset,
+    0 6px 18px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 0 8px rgba(255, 204, 0, 0.8);
+}
+
+.weapon.hacker-weapon::after {
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 230, 150, 0.3) 50%, transparent 65%);
+}
+
+.weapon.hacker-weapon.held {
+  border-color: #ffffff;
+  box-shadow: 0 0 30px rgba(255, 204, 0, 1), 0 0 0 2px rgba(255, 255, 255, 0.8) inset;
+}

@@ -6,7 +6,7 @@
   const dom   = DB.dom;
 
   /* ==================== 终端 ==================== */
-  const SNIPPETS = [
+  const SNIPPETS_DEFENDER = [
     { code: 'sys.extract("AntivirusDart", { dmg: 10 });',   type: 'light_dart' },
     { code: 'link.pull(target, { force: 1.0 });',           type: 'link' },
     { code: 'initStunProtocol("0x7F");',                    type: 'stun_chip'  },
@@ -14,6 +14,16 @@
     { code: 'triggerEarthquake({ dmg: 25 });',              type: 'gravity' },
     { code: 'if (virus.hp <= 0) system.purge();',           type: 'light_dart'    },
     { code: 'await sys.compileModule(); // 模块实体化…',    type: 'light_dart' }
+  ];
+
+  const SNIPPETS_HACKER = [
+    { code: 'inject("Trojan.exe", { payload: 0xDEAD });',   type: 'light_dart' },
+    { code: 'worm.propagate(network, { speed: 100 });',     type: 'link' },
+    { code: 'macro.execute("AutoRun");',                    type: 'stun_chip'  },
+    { code: 'encryptFiles({ ransom: 1.0 });',               type: 'fire_shield'    },
+    { code: 'exploitZeroDay({ target: "kernel" });',        type: 'gravity' },
+    { code: 'bypassFirewall({ stealth: true });',           type: 'light_dart'    },
+    { code: 'await payload.deploy(); // 病毒植入中…',       type: 'light_dart' }
   ];
 
   let snippetIdx  = 0;
@@ -37,7 +47,9 @@
       }
     }
 
-    const text = SNIPPETS[snippetIdx].code;
+    // 动态选择代码库
+    const snippets = state.mode === 'hacker' ? SNIPPETS_HACKER : SNIPPETS_DEFENDER;
+    const text = snippets[snippetIdx].code;
     const step = 1 / CFG.CPS;
 
     while (typeTimer >= step && charIdx < text.length) {
@@ -47,8 +59,8 @@
     }
 
     if (charIdx >= text.length) {
-      DB.spawnWeapon(SNIPPETS[snippetIdx].type); // 编译完成 → 产出对应类型武器
-      snippetIdx = (snippetIdx + 1) % SNIPPETS.length;
+      DB.spawnWeapon(snippets[snippetIdx].type); 
+      snippetIdx = (snippetIdx + 1) % snippets.length;
       currentLine = null;
       typeTimer = -0.34;
     }
@@ -95,7 +107,6 @@
       el.classList.toggle('ready', ready);
     }
 
-    // ===== 新增：更新能量进度条 =====
     const energyText = document.getElementById('energy-text');
     const energyBarFill = document.getElementById('energy-bar-fill');
     if (energyText && energyBarFill) {
@@ -103,7 +114,6 @@
       energyText.textContent = `${e} / ${state.energyMax}`;
       energyBarFill.style.width = `${(state.energy / state.energyMax) * 100}%`;
       
-      // 满了的时候进度条变金色闪烁
       if (ready) {
         energyBarFill.style.background = '#ffcc00';
         energyBarFill.style.boxShadow = '0 0 15px #ffcc00';

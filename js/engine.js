@@ -4,10 +4,10 @@
   const CFG   = DB.CFG;
   const state = DB.state;
   const dom   = DB.dom;
-  const W     = CFG.W;        // 世界宽 2560
-  const H     = CFG.H;        // 世界高 1440
-  const VW    = CFG.VIEW_W;   // 屏幕宽 1280
-  const VH    = CFG.VIEW_H;   // 屏幕高 720
+  const W     = CFG.W;
+  const H     = CFG.H;
+  const VW    = CFG.VIEW_W;
+  const VH    = CFG.VIEW_H;
 
   let highestScore = parseInt(localStorage.getItem('sys_brawler_highscore') || '0', 10);
   let sysPoints = parseInt(localStorage.getItem('sys_brawler_points') || '0', 10);
@@ -189,7 +189,8 @@
 
     state.hpMax = 100 + (DB.upgrades.hp * 20); state.hp = state.hpMax; state.energy = DB.upgrades.energy * 10;
     state.wave = 1; state.waveBreakT = 0; state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
-    state.mods = { damage: 0, grab: 0, launch: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
+    state.bossEnrageFlash = 0; state.bossEnrageTextT = 0;   // 【新增】清空狂暴特效计时
+    state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
     
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
 
@@ -215,7 +216,6 @@
       state.waveBreakT -= dt;
       if (state.waveBreakT <= 0) { 
         state.wave++;
-        // 10 的倍数出大 Boss，5 的倍数出小 Boss，否则出普通怪
         if (state.wave % 10 === 0) {
           DB.spawnBoss(true); 
         } else if (state.wave % 5 === 0) {
@@ -234,14 +234,12 @@
 
   /* ==================== 渲染 ==================== */
   function render() {
-    // ===== 新增：QTE 时隐藏武器层，防止遮挡密码 =====
     if (state.qte.active) {
       dom.weaponLayer.style.opacity = '0';
     } else {
       dom.weaponLayer.style.opacity = '1';
     }
 
-    // 摄像机平滑跟随
     let targetX = DB.player.x - VW / 2;
     let targetY = DB.player.y - VH / 2;
     targetX = DB.clamp(targetX, 0, W - VW);
@@ -253,27 +251,23 @@
     const camX = state.camera.x;
     const camY = state.camera.y;
 
-    // 计算屏幕震动
     let sx = 0, sy = 0;
     if (state.shake > 0.15) {
       sx = (Math.random() * 2 - 1) * state.shake;
       sy = (Math.random() * 2 - 1) * state.shake;
     }
 
-    // DOM 武器层：跟随世界移动
     dom.weaponLayer.style.transform = `translate3d(${-(camX - sx).toFixed(2)}px, ${-(camY - sy).toFixed(2)}px, 0)`;
 
     const bgCtx = dom.bgCtx;
     bgCtx.clearRect(0, 0, W, H);
     
-    // --- 绘制世界层 ---
     bgCtx.save();
     bgCtx.translate(-camX + sx, -camY + sy);
     bgCtx.drawImage(gridCanvas, 0, 0);
     DB.drawChips(bgCtx); DB.drawEnemyBullets(bgCtx); DB.drawEnemies(bgCtx); DB.drawPlayer(bgCtx); DB.drawSpawnWarnings(bgCtx);
     bgCtx.restore();
 
-    // --- 绘制 UI 层（不受摄像机影响） ---
     if (state.scene === 'playing') {
       bgCtx.save();
       
@@ -289,8 +283,10 @@
         bgCtx.fillRect(barX, barY, barW, barH); bgCtx.strokeRect(barX, barY, barW, barH);
         const hpRatio = Math.max(0, DB.boss.hp / DB.boss.maxHp);
         
+        // ===== 【新增】狂暴化血条颜色闪烁 =====
         let barColor = DB.boss.isBig ? '#ffaa00' : '#ff5a7a';
         if (DB.boss.phase === 'paralyzed') barColor = '#ffcc00';
+        else if (DB.boss.enraged) barColor = (Math.sin(state.t * 20) > 0) ? '#ff2a4a' : '#ffcc00';
         
         bgCtx.fillStyle = barColor; bgCtx.shadowColor = barColor; bgCtx.shadowBlur = 10;
         bgCtx.fillRect(barX, barY, barW * hpRatio, barH); bgCtx.shadowBlur = 0;
@@ -311,6 +307,7 @@
           if (DB.boss.bossType === 'trojan') bossName = '木马母体 (大Boss)';
         }
         if (DB.boss.phase === 'paralyzed') bossName = 'SYSTEM HALTED';
+        if (DB.boss.enraged && DB.boss.phase === 'normal') bossName += ' · 狂暴';
         
         bgCtx.fillText(bossName, VW / 2, barY + 10);
       }
@@ -341,10 +338,9 @@
         bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff'; bgCtx.shadowBlur = 0;
         bgCtx.fillText(`剩余时间: ${state.qte.timer.toFixed(1)}s`, VW / 2, VH / 2 + 50);
 
-        // 动态适配 8 位和 10 位数字
-        bgCtx.font = 'bold 56px ui-monospace, monospace'; // 字体更大
+        bgCtx.font = 'bold 56px ui-monospace, monospace';
         const seq = state.qte.sequence; 
-        const spacing = 70; // 间距更大
+        const spacing = 70;
         const totalW = seq.length * spacing; 
         const startX = VW / 2 - totalW / 2 + spacing / 2;
 
@@ -373,17 +369,37 @@
       }
       
       const mods = state.mods;
-      if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0) {
+      if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0) {
         bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
         let yy = 30;
-        if (mods.damage > 0) { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 16; }
-        if (mods.grab > 0) { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 16; }
-        if (mods.launch > 0) { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); }
+        if (mods.damage > 0)    { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 16; }
+        if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 16; }
+        if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 16; }
+        if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 16; }
+        if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 16; }
       }
+
+      // ===== 【新增】Boss 狂暴化大字提示 =====
+      if (state.bossEnrageTextT > 0) {
+        const t = state.bossEnrageTextT;
+        const alpha = Math.min(1, t / 0.6);
+        const pulse = 1 + Math.sin(state.t * 22) * 0.06;
+        bgCtx.save();
+        bgCtx.globalAlpha = alpha;
+        bgCtx.textAlign = 'center';
+        bgCtx.font = 'bold 46px ui-monospace, monospace';
+        bgCtx.fillStyle = '#ff2a4a';
+        bgCtx.shadowColor = '#ff2a4a';
+        bgCtx.shadowBlur = 30;
+        bgCtx.translate(VW / 2, VH / 2 - 120);
+        bgCtx.scale(pulse, pulse);
+        bgCtx.fillText('⚠ BOSS 狂暴化 ⚠', 0, 0);
+        bgCtx.restore();
+      }
+
       bgCtx.restore();
     }
 
-    // --- 绘制世界层特效 ---
     const fxCtx = dom.fxCtx;
     fxCtx.clearRect(0, 0, W, H);
     
@@ -399,13 +415,25 @@
     }
     fxCtx.restore();
 
-    if (state.damageFlash > 0.001) { dom.flashEl.style.background = '#ff2a4a'; dom.flashEl.style.opacity = String(Math.min(0.6, state.damageFlash)); }
-    else if (state.flash > 0.001) { dom.flashEl.style.background = '#ffffff'; dom.flashEl.style.opacity = String(Math.min(0.85, state.flash)); }
-    else if (dom.flashEl.style.opacity !== '0') { dom.flashEl.style.opacity = '0'; }
+    // ===== 屏幕闪烁优先级：狂暴 > 受伤 > 普通闪光 =====
+    if (state.bossEnrageFlash > 0.001) {
+      dom.flashEl.style.background = '#ff2a4a';
+      dom.flashEl.style.opacity = String(Math.min(0.7, state.bossEnrageFlash));
+    }
+    else if (state.damageFlash > 0.001) { 
+      dom.flashEl.style.background = '#ff2a4a'; 
+      dom.flashEl.style.opacity = String(Math.min(0.6, state.damageFlash)); 
+    }
+    else if (state.flash > 0.001) { 
+      dom.flashEl.style.background = '#ffffff'; 
+      dom.flashEl.style.opacity = String(Math.min(0.85, state.flash)); 
+    }
+    else if (dom.flashEl.style.opacity !== '0') { 
+      dom.flashEl.style.opacity = '0'; 
+    }
   }
 
   /* ==================== 输入 ==================== */
-  // 鼠标屏幕坐标转化为世界坐标
   function toWorld(cx, cy) { 
     const r = dom.stage.getBoundingClientRect(); 
     const screenX = ((cx - r.left) / r.width) * VW;
@@ -453,30 +481,26 @@
             state.qte.inputIndex++; DB.sfx.grab(); state.shake = Math.min(state.shake + 2, 10);
             if (state.qte.inputIndex >= state.qte.sequence.length) {
               state.qte.active = false; DB.boss = null;
+              state.bossEnrageTextT = 0;      // 【新增】QTE 成功 → 清空狂暴文字
+              state.bossEnrageFlash = 0;      // 【新增】QTE 成功 → 清空狂暴闪光
               state.flash = 1.0; state.shake = 40; state.hitstop = 0.2;
               for (let i = 0; i < 120; i++) {
                 DB.particles.push({ x: W/2 + (Math.random()-0.5)*600, y: 100 + Math.random()*500, vx: (Math.random()-0.5)*100, vy: 300 + Math.random()*500, life: 1.5, maxLife: 1.5, size: 4 + Math.random()*6, color: '#5ee6a8', spin: 0, rot: 0 });
               }
               
-              // ===== 新增：Boss 战后的丰富奖励 =====
-              // 1. 满血复活
               state.hp = state.hpMax;
-              // 2. 能量充满
               state.energy = state.energyMax;
-              // 3. 在玩家周围爆出 15 个芯片，像天女散花
               for (let i = 0; i < 15; i++) {
                 const angle = (i / 15) * Math.PI * 2;
                 const dist = 100 + Math.random() * 150;
                 DB.spawnChip(DB.player.x + Math.cos(angle) * dist, DB.player.y + Math.sin(angle) * dist);
               }
-              // 4. 少量额外补给武器
               for (let i = 0; i < 3; i++) {
                 const w = DB.spawnWeapon('fire_shield');
                 if (w) w.warning = 0.001;
               }
-              // =====================================
 
-              DB.sfx.clear(); state.waveBreakT = 4.0; // 给玩家 4 秒时间吃满地的芯片
+              DB.sfx.clear(); state.waveBreakT = 4.0;
             }
           } else {
             state.qte.inputIndex = 0; state.qte.timer -= 1.0; state.damageFlash = 0.4; state.shake = 20; DB.sfx.error();
@@ -509,6 +533,9 @@
     state.shake *= Math.exp(-9 * realDt); if (state.shake < 0.15) state.shake = 0;
     state.flash *= Math.exp(-11 * realDt); if (state.flash < 0.004) state.flash = 0;
     state.damageFlash *= Math.exp(-10 * realDt); if (state.damageFlash < 0.004) state.damageFlash = 0;
+    // ===== 【新增】狂暴特效衰减 =====
+    state.bossEnrageFlash *= Math.exp(-6 * realDt); if (state.bossEnrageFlash < 0.004) state.bossEnrageFlash = 0;
+    if (state.bossEnrageTextT > 0) state.bossEnrageTextT = Math.max(0, state.bossEnrageTextT - realDt);
 
     if (state.scene === 'title') { state.t += realDt; render(); DB.updateHUD(); requestAnimationFrame(frame); return; }
     if (state.scene === 'gameover') {
@@ -518,6 +545,7 @@
 
     if (state.hp <= 0 && state.scene === 'playing') {
       state.scene = 'gameover'; state.gameOverLock = 0.6; state.hitstop = 0.12; state.shake = 30; DB.heldWeapon = null; 
+      state.bossEnrageTextT = 0; state.bossEnrageFlash = 0;   // 【新增】
       if (state.score > highestScore) { highestScore = state.score; localStorage.setItem('sys_brawler_highscore', highestScore.toString()); }
       const earnedPoints = Math.floor(state.score / 10);
       if (earnedPoints > 0) { sysPoints += earnedPoints; localStorage.setItem('sys_brawler_points', sysPoints.toString()); }

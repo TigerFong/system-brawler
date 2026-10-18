@@ -5,6 +5,7 @@
   const state = DB.state;
   const layer = DB.dom.weaponLayer;
   const W     = CFG.W;
+  const H     = CFG.H;          // [修复] 补充 H 声明，原代码 pull 效果里使用了 H 但未声明
 
   /* ---------- 计数 ---------- */
   function countActiveWeapons() {
@@ -196,7 +197,6 @@
         w.thrown = true;
         w.age = 0;
         
-        // 极速直线飞出
         const speed = 1800; 
         w.vx = (dx / dist) * speed;
         w.vy = (dy / dist) * speed;
@@ -282,6 +282,64 @@
     }
   };
 
+  /* ---------- 黑洞特效 ---------- */
+  DB.triggerBlackhole = function (cx, cy, dmg) {
+    state.shake = 20;
+    DB.sfx.error();
+    for (const e of DB.enemies) {
+      const dx = cx - e.x, dy = cy - e.y;
+      const d = Math.max(1, Math.hypot(dx, dy));  // [修复] 防止除零产生 NaN
+      if (d < 250) {
+        e.x += (dx / d) * 300 * (1 - d / 250);
+        e.y += (dy / d) * 300 * (1 - d / 250);
+        e.hp -= dmg * 1.5;
+        e.flashT = 0.1;
+      }
+    }
+    for (let i = 0; i < 60; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = 50 + Math.random() * 200;
+      DB.particles.push({
+        x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist,
+        vx: -Math.cos(a) * 400, vy: -Math.sin(a) * 400,
+        life: 0.8, maxLife: 0.8, size: 6,
+        color: '#c08bff', spin: 10, rot: a
+      });
+    }
+  };
+
+  /* ---------- 连锁闪电特效 ---------- */
+  DB.triggerChain = function (cx, cy, baseDmg) {
+    let lastX = cx, lastY = cy;
+    let currentDmg = baseDmg;
+    
+    for (let chain = 0; chain < 4; chain++) {
+      let nearest = null, minD = Infinity;
+      for (const e of DB.enemies) {
+        const d = Math.hypot(e.x - lastX, e.y - lastY);
+        if (d < 300 && d < minD && e.hp > 0) {
+          minD = d; nearest = e;
+        }
+      }
+      if (!nearest) break;
+
+      for (let i = 0; i < 10; i++) {
+        const t = i / 10;
+        DB.particles.push({
+          x: lastX + (nearest.x - lastX) * t + (Math.random()-0.5)*30,
+          y: lastY + (nearest.y - lastY) * t + (Math.random()-0.5)*30,
+          vx: 0, vy: 0, life: 0.2, maxLife: 0.2, size: 4,
+          color: '#5ae8ff', spin: 0, rot: 0
+        });
+      }
+
+      nearest.hp -= currentDmg;
+      nearest.flashT = 0.15;
+      currentDmg *= 0.75;
+      lastX = nearest.x; lastY = nearest.y;
+    }
+  };
+
   /* ---------- 物理更新 ---------- */
   DB.updateWeapons = function (dt) {
     const arr = DB.weapons;
@@ -327,14 +385,12 @@
         const mouse = DB.mouse;
         
         if (state.mode === 'hacker') {
-          // 黑客：跟随鼠标
           const k = 1 - Math.exp(-30 * dt);
           w.x += (mouse.x - w.x) * k;
           w.y += (mouse.y - w.y) * k;
           w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
           w.vx = 0; w.vy = 0;
         } else {
-          // 防守方：拉弓限制
           let tx = mouse.x;
           let ty = mouse.y;
           const ddx = tx - w.anchorX;
@@ -374,7 +430,6 @@
       else {
         // ===== 飞行物理 =====
         if (w.homing) {
-          // 追踪导弹物理
           let target = w.homingTarget;
           
           if (!target || target.hp <= 0 || (target !== DB.boss && DB.enemies.indexOf(target) === -1)) {
@@ -401,11 +456,9 @@
           }
         } else {
           if (state.mode === 'hacker') {
-            // 黑客无重力直线飞刀
             w.vy += CFG.GRAVITY * 0.1 * dt; 
             w.vx *= Math.exp(-0.2 * dt); 
           } else {
-            // 防守方常规物理
             w.vy += CFG.GRAVITY * dt;
             w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
           }
@@ -463,6 +516,19 @@
                 state.energy = Math.min(state.energyMax, state.energy + 20);
                 if (DB.floaters) DB.floaters.push({ text: `数据窃取 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ee6a8' });
               }
+              // [修复] 补充黑洞/连锁闪电在黑客模式下的敌人命中处理
+              else if (w.type === 'blackhole') {
+                const dmg = finalDmg * 2.5;
+                DB.damageEnemy(e, ei, dmg, false);
+                if (DB.triggerBlackhole) DB.triggerBlackhole(e.x, e.y, finalDmg * 1.5);
+                if (DB.floaters) DB.floaters.push({ text: `断网封锁 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#c08bff' });
+              }
+              else if (w.type === 'chain') {
+                const dmg = finalDmg * 2.0;
+                DB.damageEnemy(e, ei, dmg, false);
+                if (DB.triggerChain) DB.triggerChain(e.x, e.y, finalDmg * 1.2);
+                if (DB.floaters) DB.floaters.push({ text: `病毒传染 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ae8ff' });
+              }
 
               DB.removeWeapon(w);
               hitSomething = true;
@@ -472,7 +538,6 @@
 
           if (hitSomething) continue;
 
-          // 打 Boss
           if (DB.boss && DB.boss.phase === 'normal') {
             const b = DB.boss;
             if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r + hitRadiusBonus) {
@@ -486,7 +551,13 @@
               
               if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: b.x, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
 
-              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.baseDamage);
+              if (w.def.effect === 'earthquake' && DB.triggerQuake) {
+                DB.triggerQuake(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
+                DB.triggerBlackhole(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              } else if (w.def.effect === 'chain' && DB.triggerChain) {
+                DB.triggerChain(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              }
               
               DB.removeWeapon(w);
               
@@ -508,6 +579,117 @@
           }
         }
 
+        // ===== 防守方命中与所有武器通用反弹物理 =====
+        if (state.mode !== 'hacker') {
+          // [修复] 补充 speed 声明，原代码此处直接使用 speed 导致 ReferenceError
+          const speed = Math.hypot(w.vx, w.vy);
+          let hit = false;
+          if (DB.boss && DB.boss.phase === 'normal') {
+            const b = DB.boss;
+            const dx = w.x - b.x, dy = w.y - b.y;
+            if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
+              const power = DB.clamp(speed / 700, 0.5, 2.4);
+              const hitDmg = w.baseDamage * power * (1 + state.mods.damage);
+              b.hp -= hitDmg;
+              
+              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(hitDmg)}`, x: b.x + (Math.random() - 0.5) * 40, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+              state.hitstop = Math.max(state.hitstop, 0.05);
+              state.shake = Math.min(state.shake + 5, 22);
+              DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
+              DB.sfx.hit();
+              DB.removeWeapon(w);
+              hit = true;
+
+              if (w.def.effect === 'earthquake' && DB.triggerQuake) {
+                 DB.triggerQuake(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
+                 DB.triggerBlackhole(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              } else if (w.def.effect === 'chain' && DB.triggerChain) {
+                 DB.triggerChain(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
+              }
+
+              if (b.hp <= 0) {
+                b.hp = 0;
+                b.phase = 'paralyzed';
+                state.qte.active = true;
+                state.qte.timer = b.isBig ? 9.0 : 7.0; 
+                state.qte.inputIndex = 0;
+                const seqLen = b.isBig ? 8 : 6; 
+                let seq = "";
+                for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
+                state.qte.sequence = seq;
+                state.flash = 0.5;
+                state.hitstop = 0.15;
+              }
+            }
+          }
+
+          if (hit) continue;
+
+          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
+            const e = DB.enemies[ei];
+            if (e.dead) continue;
+            const dx = w.x - e.x, dy = w.y - e.y;
+            if (dx * dx + dy * dy < (w.r + e.r) * (w.r + e.r)) {
+              if (e.type === 'shield') {
+                const isFrontal = (w.vx * e.facing < 0);
+                if (isFrontal) {
+                   DB.spawnParticles(w.x, w.y, 15, '#ffffff', 400);
+                   state.hitstop = Math.max(state.hitstop, 0.06);
+                   state.shake = Math.min(state.shake + 4, 20);
+                   DB.sfx.error();
+                   DB.removeWeapon(w);
+                   break; 
+                }
+              }
+
+              const power = DB.clamp(speed / 700, 0.5, 2.4);
+              const finalDmg = w.baseDamage * power * (1 + state.mods.damage);
+              e.hp -= finalDmg;
+              e.flashT = 0.12;
+              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+              state.hitstop = Math.max(state.hitstop, 0.045);
+              state.shake   = Math.min(state.shake + 4, 22);
+              DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);
+              DB.sfx.hit();
+              
+              if (w.def.effect === 'pull') {
+                const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
+                const pd = Math.hypot(pdx, pdy) || 1;
+                const pullDist = 180;
+
+                if (e.type === 'drone') {
+                   e.baseX += (pdx / pd) * pullDist;
+                   e.baseY += (pdy / pd) * pullDist;
+                   e.baseX = DB.clamp(e.baseX, 60, W - 60);
+                   e.baseY = DB.clamp(e.baseY, 60, H - 100);   // [修复] H 现已定义
+                }
+                e.x += (pdx / pd) * pullDist; 
+                e.y += (pdy / pd) * pullDist;
+
+                for (let k = 0; k < 10; k++) {
+                  const t = k / 10;
+                  DB.particles.push({ x: e.x + (DB.player.x - e.x) * t, y: e.y + (DB.player.y - e.y) * t, vx: (Math.random()-0.5)*100, vy: (Math.random()-0.5)*100, life: 0.4, maxLife: 0.4, size: 4, color: '#5ae8ff', spin: 0, rot: 0 });
+                }
+                state.hitstop = Math.max(state.hitstop, 0.08); 
+                state.shake = 26; 
+                state.flash = Math.max(state.flash, 0.15); 
+                DB.sfx.error(); 
+              } else if (w.def.effect === 'earthquake' && DB.triggerQuake) {
+                DB.triggerQuake(e.x, e.y, finalDmg);
+              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
+                DB.triggerBlackhole(e.x, e.y, finalDmg);
+              } else if (w.def.effect === 'chain' && DB.triggerChain) {
+                DB.triggerChain(e.x, e.y, finalDmg);
+              }
+
+              DB.removeWeapon(w);
+              if (e.hp <= 0) DB.killEnemy(ei);
+              break;
+            }
+          }
+        }
+        
         // 地面与墙壁碰撞反弹
         const floorY = CFG.GROUND_Y - w.def.h * 0.32;
         if (w.y > floorY) {
@@ -613,11 +795,10 @@
       const dy = mouse.y - p.y;
       const dist = Math.hypot(dx, dy);
       
-      // 画一条从玩家穿过鼠标的极长虚线
       if (dist > 30) {
         const dirX = dx / dist;
         const dirY = dy / dist;
-        const len = 2000; // 足够长的瞄准线
+        const len = 2000;
 
         ctx.save();
         ctx.strokeStyle = 'rgba(255, 204, 0, 0.6)';
@@ -628,8 +809,8 @@
         ctx.shadowBlur = 10;
         
         ctx.beginPath();
-        ctx.moveTo(p.x + dirX * 40, p.y + dirY * 40); // 从玩家前方开始
-        ctx.lineTo(p.x + dirX * len, p.y + dirY * len); // 无限延伸
+        ctx.moveTo(p.x + dirX * 40, p.y + dirY * 40);
+        ctx.lineTo(p.x + dirX * len, p.y + dirY * len);
         ctx.stroke();
         ctx.restore();
       }

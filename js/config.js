@@ -40,7 +40,9 @@ window.DB = window.DB || {};
     stun_chip:   { label: '🛑 阻断芯片',   w: 100, h: 34, r: 26, damage: 13 },
     fire_shield: { label: '🛡️ 防火墙模块', w: 116, h: 38, r: 28, damage: 19 },
     link:        { label: '🔗 数据牵引',   w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
-    gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
+    gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' },
+    blackhole:   { label: '🌀 黑洞发生器', w: 116, h: 38, r: 28, damage: 15, effect: 'blackhole' }, // 新增
+    chain:       { label: '⚡ 连锁闪电',   w: 100, h: 34, r: 24, damage: 12, effect: 'chain' } // 新增
   };
 
   DB.HACKER_WEAPON_TYPES = {
@@ -48,22 +50,39 @@ window.DB = window.DB || {};
     stun_chip:   { label: '🧬 宏病毒',   w: 100, h: 34, r: 26, damage: 13 },
     fire_shield: { label: '☣️ 勒索炸弹', w: 116, h: 38, r: 28, damage: 19 },
     link:        { label: '🕸️ 蠕虫牵引', w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
-    gravity:     { label: '☠️ 零日漏洞', w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
+    gravity:     { label: '☠️ 零日漏洞', w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' },
+    blackhole:   { label: '🕳️ 断网协议', w: 116, h: 38, r: 28, damage: 15, effect: 'blackhole' }, // 新增
+    chain:       { label: '🦠 病毒传染', w: 100, h: 34, r: 24, damage: 12, effect: 'chain' } // 新增
   };
 
-  DB.ENEMY_CFG = {
-    droneHp: 30,
-    wormHp: 45,
-    shieldHp: 80,
-    wormSpeed: 150
-  };
+DB.ENEMY_CFG = {
+  droneHp: 30,
+  wormHp: 45,
+  shieldHp: 80,
+  wormSpeed: 150,
+  // ===== 新增敌人数值 =====
+  chargerHp: 55,      // 冲锋者血量
+  turretHp: 90,       // 炮塔血量
+  splitterHp: 60      // 裂变体血量
+};
 
   DB.CHIP_TYPES = {
-    damage: { label: 'DMG+', color: '#ff7a9a', desc: '武器伤害 +5%' },
-    grab:   { label: 'RNG+', color: '#5ae8ff', desc: '抓取范围 +15' },
-    launch: { label: 'SPD+', color: '#c08bff', desc: '弹射速度 +5%' },
-    heal:   { label: 'HP+',  color: '#5ee6a8', desc: '恢复 15 点健康度' },
-    max_hp: { label: 'MAX+', color: '#ffcc00', desc: '生命上限 +10 (并恢复)' }
+    // ===== Common（白）：基础数值 =====
+    damage:   { label: 'DMG+',  color: '#ff7a9a', rarity: 'common', desc: '武器伤害 +5%' },
+    grab:     { label: 'RNG+',  color: '#5ae8ff', rarity: 'common', desc: '抓取范围 +15' },
+    launch:   { label: 'SPD+',  color: '#c08bff', rarity: 'common', desc: '弹射速度 +5%' },
+    heal:     { label: 'HP+',   color: '#5ee6a8', rarity: 'common', desc: '恢复 15 点健康度' },
+    max_hp:   { label: 'MAX+',  color: '#ffcc00', rarity: 'common', desc: '生命上限 +10 (并恢复)' },
+    move:     { label: 'MOV',   color: '#7aff9a', rarity: 'common', desc: '移动速度 +6%' },   // 新增
+
+    // ===== Rare（蓝）：更强数值 =====
+    damage2:  { label: 'DMG++', color: '#7aaaff', rarity: 'rare',   desc: '武器伤害 +12%' },
+    lifesteal:{ label: 'LEECH', color: '#ff5a7a', rarity: 'rare',   desc: '击杀恢复 3 HP' },
+    move2:    { label: 'MOV+',  color: '#66ccff', rarity: 'rare',   desc: '移动速度 +12%' },  // 新增
+
+    // ===== Epic（紫）：组合效果 =====
+    bloodlust:{ label: 'BL+',   color: '#d08bff', rarity: 'epic',   desc: '伤害 +10% 且击杀恢复 5 HP' },
+    move3:    { label: 'SWIFT', color: '#d08bff', rarity: 'epic',   desc: '移速 +20% 且抓取范围 +20' }  // 新增
   };
 
   DB.BOSS_CFG = {

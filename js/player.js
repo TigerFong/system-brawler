@@ -17,16 +17,21 @@
     const len = Math.hypot(ax, ay);
     if (len > 0) { ax /= len; ay /= len; }
 
-    p.vx += ax * p.accel * dt;
-    p.vy += ay * p.accel * dt;
+    // 【新增】移速芯片加成，封顶 +100%
+    const moveMul = Math.min(2.0, 1 + (state.mods.moveSpeed || 0));
+    const effAccel = p.accel * moveMul;
+    const effMaxSpeed = p.maxSpeed * moveMul;
+
+    p.vx += ax * effAccel * dt;
+    p.vy += ay * effAccel * dt;
 
     const fr = Math.exp(-p.friction * dt);
     p.vx *= fr;
     p.vy *= fr;
 
     const sp = Math.hypot(p.vx, p.vy);
-    if (sp > p.maxSpeed) {
-      const k = p.maxSpeed / sp;
+    if (sp > effMaxSpeed) {
+      const k = effMaxSpeed / sp;
       p.vx *= k;
       p.vy *= k;
     }

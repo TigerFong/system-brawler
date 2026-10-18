@@ -7,11 +7,15 @@
     t: 0, shake: 0, hitstop: 0, flash: 0, damageFlash: 0,
     energy: 0, energyMax: 100, hp: 100, hpMax: 100,
     wave: 1, waveBreakT: 0, gameOverLock: 0, scene: 'title', mode: 'defender',
-    mods: { damage: 0, grab: 0, launch: 0 },
+    mods: { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0 },
     qte: { active: false, timer: 0, sequence: "", inputIndex: 0 },
     combo: 0, comboTimer: 0, maxCombo: 0, score: 0,
     
-    camera: { x: 0, y: 0 } // <--- 新增：摄像机坐标
+    camera: { x: 0, y: 0 },
+
+    // ===== 【新增】Boss 狂暴化特效计时器 =====
+    bossEnrageFlash: 0,   // 全屏红色闪烁强度（指数衰减）
+    bossEnrageTextT: 0    // 中央文字显示剩余秒数
   };
 
   DB.player = {

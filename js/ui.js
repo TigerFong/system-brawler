@@ -12,7 +12,8 @@
     { code: 'initStunProtocol("0x7F");',                    type: 'stun_chip'  },
     { code: 'shield.init({ radius: 360, dmg: 19 });',       type: 'fire_shield'    },
     { code: 'triggerEarthquake({ dmg: 25 });',              type: 'gravity' },
-    { code: 'if (virus.hp <= 0) system.purge();',           type: 'light_dart'    },
+    { code: 'createSingularity({ radius: 200 });',          type: 'blackhole' }, // 新增
+    { code: 'arcLightning({ chain: 5 });',                  type: 'chain' }, // 新增
     { code: 'await sys.compileModule(); // 模块实体化…',    type: 'light_dart' }
   ];
 
@@ -22,7 +23,8 @@
     { code: 'macro.execute("AutoRun");',                    type: 'stun_chip'  },
     { code: 'encryptFiles({ ransom: 1.0 });',               type: 'fire_shield'    },
     { code: 'exploitZeroDay({ target: "kernel" });',        type: 'gravity' },
-    { code: 'bypassFirewall({ stealth: true });',           type: 'light_dart'    },
+    { code: 'triggerBlackout({ grid: "local" });',          type: 'blackhole' }, // 新增
+    { code: 'spreadVirus({ infection: 0.9 });',             type: 'chain' }, // 新增
     { code: 'await payload.deploy(); // 病毒植入中…',       type: 'light_dart' }
   ];
 

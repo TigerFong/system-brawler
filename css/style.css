@@ -28,8 +28,9 @@ html, body {
 #world { position: absolute; inset: 0; will-change: transform; }
 
 canvas.layer {
-  position: absolute; inset: 0;
-  width: 1280px; height: 720px;
+  position: absolute; 
+  left: 0; top: 0;
+  width: 2560px; height: 1440px;
   display: block;
   pointer-events: none;
 }
@@ -441,4 +442,83 @@ canvas.layer {
   opacity: 0.4;
   cursor: not-allowed;
   border-color: #555;
+}
+
+/* ---------- 标题画面新按钮与弹窗 ---------- */
+.title-action-btn {
+  background: transparent;
+  border: 1px solid rgba(90, 240, 255, 0.3);
+  color: #a8f0ff;
+  padding: 10px 24px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.title-action-btn:hover {
+  background: rgba(90, 240, 255, 0.1);
+  border-color: #5ae8ff;
+  box-shadow: 0 0 15px rgba(90, 240, 255, 0.3);
+}
+
+/* 黑客主题下的按钮适配 */
+#title-screen.hacker-theme .title-action-btn {
+  border-color: rgba(255, 90, 122, 0.3);
+  color: #ffd8e2;
+}
+#title-screen.hacker-theme .title-action-btn:hover {
+  background: rgba(255, 90, 122, 0.1);
+  border-color: #ff5a7a;
+  box-shadow: 0 0 15px rgba(255, 90, 122, 0.3);
+}
+
+/* 弹窗层 */
+#modal-layer {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(5px);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+}
+#modal-content {
+  background: #0c0818;
+  border: 1px solid rgba(90, 240, 255, 0.4);
+  box-shadow: 0 0 40px rgba(90, 240, 255, 0.15) inset, 0 10px 40px rgba(0, 0, 0, 0.8);
+  border-radius: 12px;
+  padding: 30px 40px;
+  width: 560px;
+  position: relative;
+  animation: modalIn 0.2s ease-out;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+#modal-close {
+  position: absolute; top: 15px; right: 20px;
+  color: rgba(150, 200, 255, 0.5);
+  font-size: 20px; cursor: pointer; transition: color 0.2s;
+}
+#modal-close:hover { color: #ff5a7a; }
+
+/* 升级面板在弹窗里的样式重置 */
+#upgrade-panel {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.upgrade-btn {
+  width: 100%;
+  padding: 12px;
+  line-height: 1.5;
+}
+.up-cost {
+  font-size: 11px; color: #aaa;
 }

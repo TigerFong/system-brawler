@@ -12,6 +12,11 @@
     state.energy = 0;
     const p = DB.player;
     
+    // ===== 新增：计算全局伤害倍率（局外升级 + 局内芯片） =====
+    const upData = DB.upgrades || { damage: 0 };
+    const totalDmgMult = 1 + (upData.damage * 0.1) + state.mods.damage;
+    // =========================================================
+
     // 共用视觉反馈
     state.shake = 30;
     state.hitstop = 0.1;
@@ -20,7 +25,7 @@
 
     if (key === '1') {
       /* --- 1: 代码暴雨 (高额全屏伤害) --- */
-      const dmg = 60;
+      const dmg = 60 * totalDmgMult; // 应用伤害倍率
       for (const t of DB.enemies) t.hp -= dmg;
       if (DB.boss && DB.boss.phase === 'normal') {
         DB.boss.hp -= dmg;
@@ -38,9 +43,9 @@
     } 
     else if (key === '2') {
       /* --- 2: 时间凝滞 (冻结全屏敌人，清空子弹) --- */
-      DB.enemyBullets.length = 0; // 消除弹幕
+      DB.enemyBullets.length = 0; 
       
-      for (const e of DB.enemies) e.frozen = 3.0; // 冻结 3 秒
+      for (const e of DB.enemies) e.frozen = 3.0; 
       if (DB.boss) DB.boss.frozen = 3.0;
 
       for (let ring = 0; ring < 3; ring++) {
@@ -82,7 +87,8 @@
       }
       DB.heldWeapon = null;
 
-      const dmg = 30 + sacrifice * 40; // 武器越多伤害越高
+      // 应用伤害倍率
+      const dmg = (30 + sacrifice * 40) * totalDmgMult; 
       
       for (const t of DB.enemies) t.hp -= dmg;
       if (DB.boss && DB.boss.phase === 'normal') {
@@ -105,12 +111,18 @@
       }
     }
 
-    // 清理被打死的敌人（因为大招是直接扣血，需要在这里统一判定死亡）
+    // ===== 修复：清理被打死的敌人（走 killEnemy 逻辑，保证掉落芯片和加分） =====
     for (let i = DB.enemies.length - 1; i >= 0; i--) {
-      if (DB.enemies[i].hp <= 0) {
-        DB.spawnParticles(DB.enemies[i].x, DB.enemies[i].y, 20, '#ffffff', 500);
-        state.energy = Math.min(state.energyMax, state.energy + 8); // 稍微回点能量
-        DB.enemies.splice(i, 1);
+      const e = DB.enemies[i];
+      if (e.hp <= 0) {
+        if (DB.killEnemy) {
+          DB.killEnemy(i); // 正常触发击杀掉落、得分和连击
+        } else {
+          // 兜底方案
+          DB.spawnParticles(e.x, e.y, 20, '#ffffff', 500);
+          state.energy = Math.min(state.energyMax, state.energy + 8); 
+          DB.enemies.splice(i, 1);
+        }
       }
     }
   };

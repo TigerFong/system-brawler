@@ -13,24 +13,49 @@
     return n;
   }
 
-  /* ---------- 九宫格伪随机生成点 ---------- */
+  /* ---------- 动态生成点（仅限当前屏幕视野） ---------- */
   function pickSpawnPoint() {
-    const COLS = 4, ROWS = 3;
-    const cw = W / COLS;
-    const ch = (CFG.GROUND_Y - 60 - CFG.PLAY_TOP) / ROWS;
+    const camX = DB.state.camera.x;
+    const camY = DB.state.camera.y;
+    
+    // 计算当前屏幕内的安全范围（留出四周边缘 Margin 100px）
+    const marginX = 120;
+    const marginY = 120;
+    const viewMinX = DB.clamp(camX + marginX, 0, CFG.W - marginX * 2);
+    const viewMaxX = DB.clamp(camX + CFG.VIEW_W - marginX, marginX * 2, CFG.W);
+    
+    // 底部要避开底部终端 UI（留出 180px）
+    const viewMinY = DB.clamp(camY + marginY, CFG.PLAY_TOP, CFG.GROUND_Y - marginY * 2);
+    const viewMaxY = DB.clamp(camY + CFG.VIEW_H - 180, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    const c = Math.floor(Math.random() * COLS);
-    const r = Math.floor(Math.random() * ROWS);
+    // 最多尝试 15 次，找一个距离玩家和怪都适中的点
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const px = viewMinX + Math.random() * (viewMaxX - viewMinX);
+      const py = viewMinY + Math.random() * (viewMaxY - viewMinY);
+      
+      // 不能离玩家太近（避免刚掉下来就被抓），也不能太远（屏幕边缘可能抓不到）
+      const distToPlayer = Math.hypot(px - DB.player.x, py - DB.player.y);
+      if (distToPlayer < 150 || distToPlayer > CFG.GRAB_RANGE * 1.8) continue;
 
+      // 不能直接掉在怪物的脸上（120px 判定）
+      let safe = true;
+      for (const e of DB.enemies) {
+        if (Math.hypot(px - e.x, py - e.y) < 150) { safe = false; break; }
+      }
+      if (safe) return { x: px, y: py };
+    }
+    
+    // 如果实在找不到（比如满屏都是怪），就随机落在玩家周围
     return {
-      x: cw * c + cw * 0.5 + (Math.random() - 0.5) * cw * 0.42,
-      y: CFG.PLAY_TOP + ch * r + ch * 0.5 + (Math.random() - 0.5) * ch * 0.42
+      x: DB.player.x + (Math.random() > 0.5 ? 1 : -1) * (200 + Math.random() * 200),
+      y: DB.clamp(DB.player.y + (Math.random() - 0.5) * 300, CFG.PLAY_TOP, CFG.GROUND_Y)
     };
   }
 
   /* ---------- 生成 ---------- */
   DB.spawnWeapon = function (type) {
-    if (countActiveWeapons() >= CFG.MAX_WEAPONS) return null;
+    const maxWeapons = CFG.MAX_WEAPONS + (DB.upgrades ? DB.upgrades.weapon : 0);
+    if (countActiveWeapons() >= maxWeapons) return null;
 
     const isHacker = state.mode === 'hacker';
     const table = isHacker ? DB.HACKER_WEAPON_TYPES : DB.WEAPON_TYPES;
@@ -42,6 +67,7 @@
     const w = {
       id: DB.nextUid(),
       type, def,
+      baseDamage: def.damage * (1 + (DB.upgrades ? DB.upgrades.damage : 0) * 0.1),
       x: p.x, y: p.y,
       vx: 0, vy: 0,
       rot: 0, rotV: 0,
@@ -53,6 +79,7 @@
       dead: false,
       hitCd: 0,
       age: 0,
+      safeTimer: 3.0,
       el: null,
       anchorX: 0,
       anchorY: 0
@@ -135,7 +162,6 @@
     best.vy = 0;
     best.rotV = 0;
     
-    // 黑客模式不需要弹弓锚点
     if (state.mode !== 'hacker') {
       best.anchorX = best.x;
       best.anchorY = best.y;
@@ -155,14 +181,12 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
-    // ===== 黑客模式：松手原地掉落 =====
     if (state.mode === 'hacker') {
       w.thrown = false;
       w.vx = 0; w.vy = 0; w.rotV = 0;
       return;
     }
 
-    // ===== 防守方：弹弓发射 =====
     const SL = CFG.SLINGSHOT;
     const dx = w.x - w.anchorX;
     const dy = w.y - w.anchorY;
@@ -239,6 +263,7 @@
   DB.updateWeapons = function (dt) {
     const arr = DB.weapons;
     const SL  = CFG.SLINGSHOT;
+    const lifetime = CFG.WEAPON_LIFETIME + (DB.upgrades ? DB.upgrades.duration * 2 : 0);
 
     for (let i = arr.length - 1; i >= 0; i--) {
       const w = arr[i];
@@ -255,7 +280,19 @@
       }
 
       w.age += dt;
-      if (w.age > CFG.WEAPON_LIFETIME) {
+      
+      if (w.safeTimer > 0) {
+        w.safeTimer -= dt;
+        if (w.el) {
+          w.el.style.boxShadow = '0 0 15px #5ae8ff, 0 0 5px #5ae8ff inset';
+          w.el.style.borderColor = '#5ae8ff';
+        }
+      } else if (w.el && !w.corrupted) {
+        w.el.style.boxShadow = '';
+        w.el.style.borderColor = '';
+      }
+
+      if (w.age > lifetime) {
         DB.spawnParticles(w.x, w.y, 8, '#6a7fa8', 140);
         DB.removeWeapon(w);
         continue;
@@ -267,20 +304,18 @@
         const mouse = DB.mouse;
         
         if (state.mode === 'hacker') {
-          // ===== 黑客模式：直接跟随鼠标拖拽 =====
           const k = 1 - Math.exp(-30 * dt);
           w.x += (mouse.x - w.x) * k;
           w.y += (mouse.y - w.y) * k;
           w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
           w.vx = 0; w.vy = 0;
 
-          // 实时碰撞引爆检测
           let hitSomething = false;
           
           for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
             const e = DB.enemies[ei];
             if (Math.hypot(w.x - e.x, w.y - e.y) < w.r + e.r) {
-              DB.damageEnemy(e, ei, w.def.damage, w.def.effect === 'earthquake');
+              DB.damageEnemy(e, ei, w.baseDamage, w.def.effect === 'earthquake');
               DB.removeWeapon(w);
               DB.heldWeapon = null;
               hitSomething = true;
@@ -291,14 +326,14 @@
           if (!hitSomething && DB.boss && DB.boss.phase === 'normal') {
             const b = DB.boss;
             if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r) {
-              b.hp -= w.def.damage * 1.2 * (1 + state.mods.damage);
+              b.hp -= w.baseDamage * 1.2 * (1 + state.mods.damage);
               b.flashT = 0.15;
               state.hitstop = Math.max(state.hitstop, 0.08);
               state.shake = Math.min(state.shake + 8, 25);
               DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
               DB.sfx.hit();
               
-              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.def.damage);
+              if (w.def.effect === 'earthquake') DB.triggerQuake(b.x, b.y, w.baseDamage);
               
               DB.removeWeapon(w);
               DB.heldWeapon = null;
@@ -321,7 +356,6 @@
 
           if (hitSomething) continue;
         } else {
-          // ===== 防守方：弹弓皮兜拉拽 =====
           let tx = mouse.x;
           let ty = mouse.y;
           const ddx = tx - w.anchorX;
@@ -389,7 +423,6 @@
         if (w.y < CFG.PLAY_TOP) { w.y = CFG.PLAY_TOP; w.vy =  Math.abs(w.vy) * CFG.WALL_BOUNCE; }
       }
 
-      /* --- 污染状态视觉 --- */
       if (w.corrupted && w.el) {
         w.el.style.borderColor = '#ff5a7a';
         w.el.style.color = '#ff5a7a';
@@ -402,7 +435,7 @@
       }
 
       if (w.el && !w.corrupted) {
-        if (w.age > CFG.WEAPON_LIFETIME - 2) {
+        if (w.age > lifetime - 2) {
           w.el.style.opacity = (Math.sin(state.t * 26) > 0) ? 1 : 0.25;
         } else {
           w.el.style.opacity = 1;
@@ -464,7 +497,6 @@
     const bx = w.x;
     const by = w.y;
 
-    // ===== 黑客模式：红色数据线 =====
     if (state.mode === 'hacker') {
       ctx.save();
       ctx.strokeStyle = 'rgba(255, 90, 122, 0.6)';
@@ -481,7 +513,6 @@
       return;
     }
 
-    // ===== 防守方：皮筋 =====
     const dx = bx - ax, dy = by - ay;
     const pullDist = Math.hypot(dx, dy);
     if (pullDist < 4) return;

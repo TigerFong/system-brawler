@@ -4,10 +4,12 @@ window.DB = window.DB || {};
   'use strict';
 
   DB.CFG = {
-    W: 1280,
-    H: 720,
-    GROUND_Y: 580,
-    PLAY_TOP: 130,
+    W: 2560,            // 扩大世界宽度（原 1280）
+    H: 1440,            // 扩大世界高度（原 720）
+    VIEW_W: 1280,       // 摄像机视口宽度
+    VIEW_H: 720,        // 摄像机视口高度
+    GROUND_Y: 1200,     // 地面线拉低
+    PLAY_TOP: 100,      // 天花板拉高
 
     GRAVITY: 1500,
     AIR_DRAG: 1.1,
@@ -15,7 +17,7 @@ window.DB = window.DB || {};
     BOUNCE: 0.42,
     WALL_BOUNCE: 0.5,
 
-    GRAB_RANGE: 300,
+    GRAB_RANGE: 400,    // 世界变大，抓取范围稍微加大
     GRAB_PICK_R: 30,
     MAX_WEAPONS: 5,
     WEAPON_LIFETIME: 10,
@@ -25,7 +27,7 @@ window.DB = window.DB || {};
     CPS: 42,
 
     SLINGSHOT: {
-      MAX_PULL: 240,
+      MAX_PULL: 300,
       MIN_PULL: 34,
       MIN_LAUNCH: 420,
       MAX_LAUNCH: 2600,
@@ -41,7 +43,6 @@ window.DB = window.DB || {};
     gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' }
   };
 
-  // 新增：黑客专属武器外观
   DB.HACKER_WEAPON_TYPES = {
     light_dart:  { label: '💀 木马飞刀', w: 100, h: 34, r: 24, damage: 10 },
     stun_chip:   { label: '🧬 宏病毒',   w: 100, h: 34, r: 26, damage: 13 },
@@ -58,20 +59,23 @@ window.DB = window.DB || {};
   };
 
   DB.CHIP_TYPES = {
-    damage: { label: 'DMG+', color: '#ff7a9a', desc: '武器伤害 +15%' },
-    grab:   { label: 'RNG+', color: '#5ae8ff', desc: '抓取范围 +40' },
-    launch: { label: 'SPD+', color: '#c08bff', desc: '弹射速度 +15%' },
-    heal:   { label: 'HP+',  color: '#5ee6a8', desc: '恢复 20 点健康度' },
-    max_hp: { label: 'MAX+', color: '#ffcc00', desc: '生命上限 +20 (并恢复)' }
+    damage: { label: 'DMG+', color: '#ff7a9a', desc: '武器伤害 +5%' },
+    grab:   { label: 'RNG+', color: '#5ae8ff', desc: '抓取范围 +15' },
+    launch: { label: 'SPD+', color: '#c08bff', desc: '弹射速度 +5%' },
+    heal:   { label: 'HP+',  color: '#5ee6a8', desc: '恢复 15 点健康度' },
+    max_hp: { label: 'MAX+', color: '#ffcc00', desc: '生命上限 +10 (并恢复)' }
   };
 
   DB.BOSS_CFG = {
-    hp: 400,              
-    maxHp: 400,
-    radius: 60,
-    fireInterval: 3.0,    
-    summonInterval: 10.0  
+    smallHp: 1500,
+    bigHp: 4000,
+    radius: 80,
+    fireInterval: 2.0,    
+    summonInterval: 8.0  
   };
+  
+  DB.SMALL_BOSS_TYPES = ['bsod', 'firewall', 'vampire'];
+  DB.BIG_BOSS_TYPES = ['manager', 'trojan'];
 
   DB.clamp = function (v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
   DB.circleRectHit = function (cx, cy, cr, rx, ry, rw, rh) {

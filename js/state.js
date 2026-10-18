@@ -4,28 +4,14 @@
   const CFG = DB.CFG;
 
   DB.state = {
-    t: 0,
-    shake: 0,
-    hitstop: 0,
-    flash: 0,
-    damageFlash: 0,
-    energy: 0,
-    energyMax: 100,
-    hp: 100,
-    hpMax: 100,
-    wave: 1,
-    waveBreakT: 0,
-    gameOverLock: 0,
-    scene: 'title',
-    mode: 'defender',
+    t: 0, shake: 0, hitstop: 0, flash: 0, damageFlash: 0,
+    energy: 0, energyMax: 100, hp: 100, hpMax: 100,
+    wave: 1, waveBreakT: 0, gameOverLock: 0, scene: 'title', mode: 'defender',
     mods: { damage: 0, grab: 0, launch: 0 },
     qte: { active: false, timer: 0, sequence: "", inputIndex: 0 },
+    combo: 0, comboTimer: 0, maxCombo: 0, score: 0,
     
-    // 新增：连击与得分系统
-    combo: 0,
-    comboTimer: 0,
-    maxCombo: 0,
-    score: 0
+    camera: { x: 0, y: 0 } // <--- 新增：摄像机坐标
   };
 
   DB.player = {

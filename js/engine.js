@@ -573,7 +573,9 @@
 
       // 全屏触摸（处理移动和瞄准）
       window.addEventListener('touchstart', (e) => {
+        // 【修复】排除 UI 按钮和弹窗
         if (e.target.closest('#action-zone') || e.target.closest('#qte-zone') || e.target.closest('#joy-zone')) return;
+        if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn')) return;
         
         if (state.scene === 'title') { startGame(); return; }
         if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
@@ -589,7 +591,10 @@
       }, { passive: false });
 
       window.addEventListener('touchmove', (e) => {
-        e.preventDefault();
+        // 【修复】只有在拖拽摇杆或瞄准时才阻止默认滚动
+        if (aimTouchId !== null || joyTouchId !== null) {
+          e.preventDefault(); 
+        }
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
           if (t.identifier === joyTouchId) {
@@ -603,7 +608,7 @@
       }, { passive: false });
 
       window.addEventListener('touchend', (e) => {
-        e.preventDefault();
+        // 【修复】移除了 e.preventDefault()，保证右下角按钮能正常被点击
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
           if (t.identifier === joyTouchId) {

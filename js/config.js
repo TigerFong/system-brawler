@@ -42,7 +42,8 @@ window.DB = window.DB || {};
     link:        { label: '🔗 数据牵引',   w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
     gravity:     { label: '🌐 重力模块',   w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' },
     blackhole:   { label: '🌀 黑洞发生器', w: 116, h: 38, r: 28, damage: 15, effect: 'blackhole' }, // 新增
-    chain:       { label: '⚡ 连锁闪电',   w: 100, h: 34, r: 24, damage: 12, effect: 'chain' } // 新增
+    chain:       { label: '⚡ 连锁闪电',   w: 100, h: 34, r: 24, damage: 12, effect: 'chain' }, // 新增
+    code_slash: { label: '> 数据光刃', w: 160, h: 28, r: 24, damage: 30, effect: 'glitch' },
   };
 
   DB.HACKER_WEAPON_TYPES = {
@@ -52,22 +53,23 @@ window.DB = window.DB || {};
     link:        { label: '🕸️ 蠕虫牵引', w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
     gravity:     { label: '☠️ 零日漏洞', w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' },
     blackhole:   { label: '🕳️ 断网协议', w: 116, h: 38, r: 28, damage: 15, effect: 'blackhole' }, // 新增
-    chain:       { label: '🦠 病毒传染', w: 100, h: 34, r: 24, damage: 12, effect: 'chain' } // 新增
+    chain:       { label: '🦠 病毒传染', w: 100, h: 34, r: 24, damage: 12, effect: 'chain' }, // 新增
+    code_slash: { label: '> 代码碎片', w: 160, h: 28, r: 24, damage: 30, effect: 'glitch' },
   };
 
 DB.ENEMY_CFG = {
-  droneHp: 240,    
-  wormHp: 360,     
-  shieldHp: 700,   
-  wormSpeed: 300,
-  chargerHp: 500,  
-  turretHp: 800,   
-  splitterHp: 440  
+  droneHp: 300,     // 前期大概需要砸 2-3 下
+  wormHp: 400,      
+  shieldHp: 800,    
+  wormSpeed: 400,
+  chargerHp: 600,  
+  turretHp: 900,    
+  splitterHp: 500  
 };
 
 DB.BOSS_CFG = {
-  smallHp: 9000,  
-  bigHp: 27000,    
+  smallHp: 8000,    // 需要配合走位输出 20 秒左右
+  bigHp: 20000,     
   radius: 80,
   fireInterval: 2.0,    
   summonInterval: 8.0  

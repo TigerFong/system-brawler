@@ -203,6 +203,8 @@ canvas.layer {
   white-space: pre;
   text-shadow: 0 0 8px rgba(94, 230, 168, .45);
   animation: lineIn .18s ease-out;
+  pointer-events: auto; /* 允许鼠标点击 */
+  cursor: grab;         /* 鼠标变成抓取图标 */
 }
 .term-line::before { content: "> "; color: rgba(94, 230, 168, .45); }
 .term-line:last-child::after {

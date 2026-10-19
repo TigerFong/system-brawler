@@ -12,8 +12,8 @@
     { code: 'initStunProtocol("0x7F");',                    type: 'stun_chip'  },
     { code: 'shield.init({ radius: 360, dmg: 19 });',       type: 'fire_shield'    },
     { code: 'triggerEarthquake({ dmg: 25 });',              type: 'gravity' },
-    { code: 'createSingularity({ radius: 200 });',          type: 'blackhole' }, // 新增
-    { code: 'arcLightning({ chain: 5 });',                  type: 'chain' }, // 新增
+    { code: 'createSingularity({ radius: 200 });',          type: 'blackhole' },
+    { code: 'arcLightning({ chain: 5 });',                  type: 'chain' },
     { code: 'await sys.compileModule(); // 模块实体化…',    type: 'light_dart' }
   ];
 
@@ -23,8 +23,8 @@
     { code: 'macro.execute("AutoRun");',                    type: 'stun_chip'  },
     { code: 'encryptFiles({ ransom: 1.0 });',               type: 'fire_shield'    },
     { code: 'exploitZeroDay({ target: "kernel" });',        type: 'gravity' },
-    { code: 'triggerBlackout({ grid: "local" });',          type: 'blackhole' }, // 新增
-    { code: 'spreadVirus({ infection: 0.9 });',             type: 'chain' }, // 新增
+    { code: 'triggerBlackout({ grid: "local" });',          type: 'blackhole' },
+    { code: 'spreadVirus({ infection: 0.9 });',             type: 'chain' },
     { code: 'await payload.deploy(); // 病毒植入中…',       type: 'light_dart' }
   ];
 
@@ -33,6 +33,65 @@
   let currentLine = null;
   let typeTimer   = 0;
 
+  // ===== 核心逻辑：手撕代码 =====
+  function handleCodeGrab(e) {
+    if (!e.target.closest) return;
+    const line = e.target.closest('.term-line');
+    
+    if (!line || line === currentLine) return; 
+    
+    let textContent = line.textContent || '';
+    if (textContent.length < 3) return;
+
+    // 【修复】如果场上有旧的代码武器，直接销毁它，给新的腾位置
+    const oldCode = DB.weapons.find(w => w.type === 'code_slash' && !w.dead);
+    if (oldCode) {
+      DB.spawnParticles(oldCode.x, oldCode.y, 15, '#00ffcc', 300);
+      DB.removeWeapon(oldCode);
+    }
+    
+    textContent = textContent.replace(/^>\s*/, ''); 
+    if (textContent.length > 16) textContent = textContent.substring(0, 14) + '..';
+
+    line.remove(); 
+    if (e.stopPropagation) e.stopPropagation(); 
+    if (e.preventDefault) e.preventDefault();
+
+    // 【修改】让代码武器也能吃满波次加成
+    const waveScale = Math.pow(1.35, state.wave - 1); // 1.35 略低于怪物膨胀，防止秒杀一切
+    const dynamicDmg = (20 + textContent.length * 3.5) * waveScale;
+    const w = DB.spawnWeapon('code_slash', textContent, dynamicDmg);
+    
+    if (w) {
+      w.x = DB.player.x;
+      w.y = DB.player.y;
+      w.warning = 0.001; 
+      
+      w.held = true;
+      w.thrown = false;
+      w.vx = 0; w.vy = 0; w.rotV = 0;
+      
+      if (state.mode !== 'hacker') {
+        w.anchorX = w.x;
+        w.anchorY = w.y;
+      }
+      
+      DB.heldWeapon = w;
+      DB.mouse.down = true; 
+      
+      DB.mouse.x = w.x;
+      DB.mouse.y = w.y;
+      
+      DB.spawnParticles(w.x, w.y, 20, '#00ffcc', 400);
+      DB.sfx.chip();
+    }
+  }
+
+  dom.termLines.addEventListener('mousedown', handleCodeGrab);
+  dom.termLines.addEventListener('touchstart', handleCodeGrab, { passive: false });
+
+
+  /* ==================== 终端打字机逻辑 ==================== */
   DB.updateTerminal = function (dt) {
     typeTimer += dt;
 
@@ -49,7 +108,6 @@
       }
     }
 
-    // 动态选择代码库
     const snippets = state.mode === 'hacker' ? SNIPPETS_HACKER : SNIPPETS_DEFENDER;
     const text = snippets[snippetIdx].code;
     const step = 1 / CFG.CPS;
@@ -126,6 +184,7 @@
         energyText.style.color = '#c08bff';
       }
     }
+    
     // ===== 移动端虚拟按钮状态同步 =====
     const mobSkill = document.querySelector('.skill-btn');
     if (mobSkill) {
@@ -143,12 +202,12 @@
         if (ultReady) {
           btn.style.color = '#dff3ff';
           btn.style.borderColor = '#5ae8ff';
-          btn.style.background = 'rgba(90,240,255,0.3)'; // 亮起时的底色
+          btn.style.background = 'rgba(90,240,255,0.3)'; 
           btn.style.boxShadow = '0 0 15px rgba(90,240,255,0.8)';
         } else {
           btn.style.color = '#777';
           btn.style.borderColor = '#555';
-          btn.style.background = 'rgba(0,0,0,0.6)'; // 未亮时的暗底色
+          btn.style.background = 'rgba(0,0,0,0.6)'; 
           btn.style.boxShadow = 'none';
         }
       });

@@ -5,7 +5,7 @@
   const state = DB.state;
   const layer = DB.dom.weaponLayer;
   const W     = CFG.W;
-  const H     = CFG.H;          // [修复] 补充 H 声明，原代码 pull 效果里使用了 H 但未声明
+  const H     = CFG.H;
 
   /* ---------- 计数 ---------- */
   function countActiveWeapons() {
@@ -47,9 +47,21 @@
   }
 
   /* ---------- 生成 ---------- */
-  DB.spawnWeapon = function (type) {
+  DB.spawnWeapon = function (type, customText, customDmg) {
+    const isCode = type === 'code_slash';
+    
+    // 【新增】全场同时只能存在一把代码武器（打出去了才能再撕）
+    if (isCode) {
+      const exists = DB.weapons.some(w => w.type === 'code_slash' && !w.dead);
+      if (exists) {
+        if (DB.floaters) DB.floaters.push({ text: '❌ 代码武器已占用', x: DB.player.x, y: DB.player.y - 40, vy: -50, life: 1, color: '#ff5a7a' });
+        DB.sfx.error();
+        return null;
+      }
+    }
+
     const maxWeapons = CFG.MAX_WEAPONS + (DB.upgrades ? DB.upgrades.weapon : 0);
-    if (countActiveWeapons() >= maxWeapons) return null;
+    if (!isCode && countActiveWeapons() >= maxWeapons) return null;
 
     const isHacker = state.mode === 'hacker';
     const table = isHacker ? DB.HACKER_WEAPON_TYPES : DB.WEAPON_TYPES;
@@ -61,7 +73,8 @@
     const w = {
       id: DB.nextUid(),
       type, def,
-      baseDamage: def.damage * (1 + (DB.upgrades && DB.upgrades.damage ? DB.upgrades.damage : 0) * 0.1) || def.damage,
+      baseDamage: customDmg || (def.damage * (1 + (DB.upgrades && DB.upgrades.damage ? DB.upgrades.damage : 0) * 0.1)),
+      displayText: customText || null,
       x: p.x, y: p.y,
       vx: 0, vy: 0,
       rot: 0, rotV: 0,
@@ -83,21 +96,34 @@
     return w;
   };
 
-  function createWeaponEl(w) {
+  DB.createWeaponEl = function(w) {
     const el = document.createElement('div');
     el.className = 'weapon';
     
-    if (state.mode === 'hacker') {
-      el.style.color = '#ffcc00';
-      el.style.borderColor = 'rgba(255, 204, 0, 0.8)';
-      el.style.background = 'linear-gradient(180deg, rgba(80, 60, 10, 0.95), rgba(30, 20, 5, 0.98))';
-      el.style.boxShadow = '0 0 15px rgba(255, 204, 0, 0.4), 0 0 5px rgba(255, 204, 0, 0.6) inset, 0 6px 18px rgba(0, 0, 0, 0.6)';
-      el.style.textShadow = '0 0 8px rgba(255, 204, 0, 0.8)';
+    if (w.type === 'code_slash') {
+      el.style.width = w.def.w + 'px'; 
+      el.style.height = w.def.h + 'px';
+      el.style.padding = '0 10px';
+      el.style.color = '#00ffcc';
+      el.style.borderColor = 'rgba(0, 255, 204, 0.8)';
+      el.style.background = 'rgba(0, 255, 204, 0.15)';
+      el.style.boxShadow = '0 0 15px rgba(0, 255, 204, 0.5)';
+      el.style.borderRadius = '4px';
+      el.style.fontSize = '12px';
+      el.style.letterSpacing = '0px';
+      el.style.whiteSpace = 'nowrap';
+      el.style.overflow = 'hidden';
+      el.style.textOverflow = 'ellipsis';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.textContent = w.displayText; 
+    } else {
+      if (state.mode === 'hacker') { /* ... */ }
+      el.style.width  = w.def.w + 'px';
+      el.style.height = w.def.h + 'px';
+      el.textContent = w.def.label;
     }
     
-    el.style.width  = w.def.w + 'px';
-    el.style.height = w.def.h + 'px';
-    el.textContent = w.def.label;
     layer.appendChild(el);
     return el;
   }
@@ -182,7 +208,7 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
-    // ===== 黑客：指哪打哪，从当前位置直线飞出 =====
+    // ===== 黑客：指哪打哪 =====
     if (state.mode === 'hacker') {
       const p = DB.player;
       const mouse = DB.mouse;
@@ -200,7 +226,10 @@
         const speed = 1800; 
         w.vx = (dx / dist) * speed;
         w.vy = (dy / dist) * speed;
-        w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20;
+        
+        // 【修复】代码武器取消旋转
+        if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
+        else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20; }
         
         state.shake = Math.min(state.shake + 4, 15);
         DB.spawnParticles(w.x, w.y, 10, '#ffcc00', 300);
@@ -234,7 +263,10 @@
     w.age = 0;
     w.vx = dirX * speed;
     w.vy = dirY * speed;
-    w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14);
+    
+    // 【修复】代码武器取消旋转
+    if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
+    else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14); }
 
     if (t > 0.15) {
       state.shake = Math.min(state.shake + 2 + t * 8, 22);
@@ -288,7 +320,7 @@
     DB.sfx.error();
     for (const e of DB.enemies) {
       const dx = cx - e.x, dy = cy - e.y;
-      const d = Math.max(1, Math.hypot(dx, dy));  // [修复] 防止除零产生 NaN
+      const d = Math.max(1, Math.hypot(dx, dy)); 
       if (d < 250) {
         e.x += (dx / d) * 300 * (1 - d / 250);
         e.y += (dy / d) * 300 * (1 - d / 250);
@@ -354,7 +386,7 @@
         w.warning -= dt;
         if (w.warning <= 0) {
           w.warning = 0;
-          w.el = createWeaponEl(w);
+          w.el = DB.createWeaponEl(w);
           positionWeaponEl(w);
         }
         continue;
@@ -516,7 +548,6 @@
                 state.energy = Math.min(state.energyMax, state.energy + 20);
                 if (DB.floaters) DB.floaters.push({ text: `数据窃取 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ee6a8' });
               }
-              // [修复] 补充黑洞/连锁闪电在黑客模式下的敌人命中处理
               else if (w.type === 'blackhole') {
                 const dmg = finalDmg * 2.5;
                 DB.damageEnemy(e, ei, dmg, false);
@@ -528,6 +559,15 @@
                 DB.damageEnemy(e, ei, dmg, false);
                 if (DB.triggerChain) DB.triggerChain(e.x, e.y, finalDmg * 1.2);
                 if (DB.floaters) DB.floaters.push({ text: `病毒传染 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ae8ff' });
+              }
+              else if (w.type === 'code_slash') {
+                const dmg = finalDmg * 1.5;
+                DB.damageEnemy(e, ei, dmg, false);
+                if (e.hp > 0) {
+                  e.slowT = 3.0;
+                  e.vulnerable = 3.0;
+                }
+                if (DB.floaters) DB.floaters.push({ text: `GLITCH! -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#00ffcc' });
               }
 
               DB.removeWeapon(w);
@@ -541,9 +581,17 @@
           if (DB.boss && DB.boss.phase === 'normal') {
             const b = DB.boss;
             if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r + hitRadiusBonus) {
-              const finalDmg = w.baseDamage * 4.0 * (1 + state.mods.damage);
+              const finalDmg = DB.calcWeaponDamage(w.baseDamage * 4.0 * (1 + state.mods.damage), b.x, b.y);
               b.hp -= finalDmg;
               b.flashT = 0.15;
+              
+              if (w.type === 'code_slash') {
+                b.slowT = 3.0;
+                b.vulnerable = 3.0;
+                if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: b.x, y: b.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
+                DB.spawnParticles(b.x, b.y, 15, '#00ffcc', 300);
+              }
+
               state.hitstop = Math.max(state.hitstop, 0.08);
               state.shake = Math.min(state.shake + 8, 25);
               DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
@@ -562,6 +610,7 @@
               DB.removeWeapon(w);
               
               if (b.hp <= 0) {
+                DB.triggerQTE(b);
                 b.hp = 0;
                 b.phase = 'paralyzed';
                 state.qte.active = true;
@@ -579,9 +628,8 @@
           }
         }
 
-        // ===== 防守方命中与所有武器通用反弹物理 =====
+        // ===== 防守方命中 =====
         if (state.mode !== 'hacker') {
-          // [修复] 补充 speed 声明，原代码此处直接使用 speed 导致 ReferenceError
           const speed = Math.hypot(w.vx, w.vy);
           let hit = false;
           if (DB.boss && DB.boss.phase === 'normal') {
@@ -589,10 +637,18 @@
             const dx = w.x - b.x, dy = w.y - b.y;
             if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
               const power = DB.clamp(speed / 700, 0.5, 2.4);
-              const hitDmg = w.baseDamage * power * (1 + state.mods.damage);
+              
+              // 【修复】调用暴击
+              const hitDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), b.x, b.y);
               b.hp -= hitDmg;
               
-              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(hitDmg)}`, x: b.x + (Math.random() - 0.5) * 40, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+              // 【修复】代码特效
+              if (w.type === 'code_slash') {
+                 b.slowT = 3.0; b.vulnerable = 3.0;
+                 if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: b.x, y: b.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
+                 DB.spawnParticles(b.x, b.y, 15, '#00ffcc', 300);
+              }
+
               state.hitstop = Math.max(state.hitstop, 0.05);
               state.shake = Math.min(state.shake + 5, 22);
               DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
@@ -609,8 +665,7 @@
               }
 
               if (b.hp <= 0) {
-                b.hp = 0;
-                b.phase = 'paralyzed';
+                b.hp = 0; b.phase = 'paralyzed';
                 state.qte.active = true;
                 state.qte.timer = b.isBig ? 9.0 : 7.0; 
                 state.qte.inputIndex = 0;
@@ -618,8 +673,7 @@
                 let seq = "";
                 for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
                 state.qte.sequence = seq;
-                state.flash = 0.5;
-                state.hitstop = 0.15;
+                state.flash = 0.5; state.hitstop = 0.15;
               }
             }
           }
@@ -637,17 +691,25 @@
                    DB.spawnParticles(w.x, w.y, 15, '#ffffff', 400);
                    state.hitstop = Math.max(state.hitstop, 0.06);
                    state.shake = Math.min(state.shake + 4, 20);
-                   DB.sfx.error();
-                   DB.removeWeapon(w);
+                   DB.sfx.error(); DB.removeWeapon(w);
                    break; 
                 }
               }
 
               const power = DB.clamp(speed / 700, 0.5, 2.4);
-              const finalDmg = w.baseDamage * power * (1 + state.mods.damage);
+              
+              // 【修复】调用暴击
+              const finalDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), e.x, e.y);
               e.hp -= finalDmg;
               e.flashT = 0.12;
-              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
+              
+              // 【修复】代码特效
+              if (w.type === 'code_slash') {
+                 e.slowT = 3.0; e.vulnerable = 3.0;
+                 if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: e.x, y: e.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
+                 DB.spawnParticles(e.x, e.y, 15, '#00ffcc', 300);
+              }
+
               state.hitstop = Math.max(state.hitstop, 0.045);
               state.shake   = Math.min(state.shake + 4, 22);
               DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);
@@ -657,23 +719,20 @@
                 const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
                 const pd = Math.hypot(pdx, pdy) || 1;
                 const pullDist = 180;
-
                 if (e.type === 'drone') {
                    e.baseX += (pdx / pd) * pullDist;
                    e.baseY += (pdy / pd) * pullDist;
                    e.baseX = DB.clamp(e.baseX, 60, W - 60);
-                   e.baseY = DB.clamp(e.baseY, 60, H - 100);   // [修复] H 现已定义
+                   e.baseY = DB.clamp(e.baseY, 60, H - 100);
                 }
                 e.x += (pdx / pd) * pullDist; 
                 e.y += (pdy / pd) * pullDist;
-
                 for (let k = 0; k < 10; k++) {
                   const t = k / 10;
                   DB.particles.push({ x: e.x + (DB.player.x - e.x) * t, y: e.y + (DB.player.y - e.y) * t, vx: (Math.random()-0.5)*100, vy: (Math.random()-0.5)*100, life: 0.4, maxLife: 0.4, size: 4, color: '#5ae8ff', spin: 0, rot: 0 });
                 }
                 state.hitstop = Math.max(state.hitstop, 0.08); 
-                state.shake = 26; 
-                state.flash = Math.max(state.flash, 0.15); 
+                state.shake = 26; state.flash = Math.max(state.flash, 0.15); 
                 DB.sfx.error(); 
               } else if (w.def.effect === 'earthquake' && DB.triggerQuake) {
                 DB.triggerQuake(e.x, e.y, finalDmg);

@@ -7,21 +7,20 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    hpPerWave:            0.47,
-    enemyDmgPerWave:      0.40,   // 伤害成长
-    bossDmgPerWave:       0.35,   
+    hpExponent:           1.60,   
+    dmgExponent:          0.75,   
+    bossDmgPerWave:       0.30,   
     bossSpeedPerWave:     0.15,   
     
-    // 怪物数量：分母变小，后期满屏怪
-    droneCountDiv:        2,      
-    wormCountDiv:         2,
-    shieldCountDiv:       2,
-    turretCountDiv:       2,
-    chargerCountDiv:      2,
-    splitterCountDiv:     2,
+    droneCountDiv:        1.5,    
+    wormCountDiv:         1.5,
+    shieldCountDiv:       1.5,
+    turretCountDiv:       1.5,
+    chargerCountDiv:      1.5,
+    splitterCountDiv:     1.5,
     
-    bossBulletDivDefault: 2,     
-    bossBulletDivFirewall: 3,     
+    bossBulletDivDefault: 1.5,     
+    bossBulletDivFirewall: 2,     
     bossSummonDiv:        2       
   };
   const G = DB.GROWTH;
@@ -38,6 +37,30 @@
   const BULLET_LIFE   = 6;
   const CHIP_LIFETIME = 14;
 
+  // ===== 【新增】统一的 QTE 触发与清场逻辑 =====
+  DB.triggerQTE = function (b) {
+    if (b.phase === 'paralyzed') return;
+    b.hp = 0;
+    b.phase = 'paralyzed';
+    state.qte.active = true;
+    state.qte.timer = b.isBig ? 9.0 : 7.0;
+    state.qte.inputIndex = 0;
+    
+    const seqLen = b.isBig ? 8 : 6; 
+    let seq = "";
+    for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
+    state.qte.sequence = seq;
+    
+    state.flash = 0.5;
+    state.hitstop = 0.15;
+    DB.sfx.hurt();
+
+    // 强制清场，给玩家绝对安全的环境
+    DB.enemies.length = 0;
+    DB.enemyBullets.length = 0;
+    DB.spawnParticles(b.x, b.y, 100, '#ffcc00', 800);
+  };
+
   DB.spawnWave = function (n) {
     const camX = state.camera.x;
     const camY = state.camera.y;
@@ -46,8 +69,8 @@
     const minY = DB.clamp(camY - 100, CFG.PLAY_TOP, CFG.GROUND_Y);
     const maxY = DB.clamp(camY + CFG.VIEW_H, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    const hpMult      = 1 + (n - 1) * G.hpPerWave;
-    const waveDmgMult = 1 + (n - 1) * G.enemyDmgPerWave;
+    const hpMult      = Math.pow(G.hpExponent, n - 1);
+    const waveDmgMult = Math.pow(G.dmgExponent, n - 1);
 
     const droneCount    = 2 + Math.floor(n / G.droneCountDiv);
     const wormCount     = 1 + Math.floor(n / G.wormCountDiv);
@@ -169,7 +192,7 @@
     const typePool = isBig ? DB.BIG_BOSS_TYPES : DB.SMALL_BOSS_TYPES;
     const bossType = typePool[Math.floor(Math.random() * typePool.length)];
     
-    const waveMult = 1 + (state.wave - 1) * G.hpPerWave;
+    const waveMult = Math.pow(G.hpExponent, state.wave - 1);
     const baseHp   = isBig ? DB.BOSS_CFG.bigHp : DB.BOSS_CFG.smallHp;
     const hp       = Math.floor(baseHp * waveMult);
 
@@ -376,6 +399,8 @@
 
   function damagePlayer(dmg, px, py) {
     if (state.gameOver || state.scene !== 'playing') return;
+    // QTE 期间玩家无敌
+    if (state.qte.active) return; 
     
     let finalDmg = dmg;
     if (state.mode === 'defender' && state.skillActiveT > 0) {
@@ -393,13 +418,11 @@
     state.combo = 0;
   }
 
-  // ===== 【新增】通用的反伤爆炸逻辑 =====
   DB.triggerReflectBlast = function (cx, cy, baseDmg) {
     const reflectRadius = 350;
     const reflectDmg = (baseDmg || 10) * 2.5;
     let hitCount = 0;
 
-    // 冲击波视觉
     for (let k = 0; k < 24; k++) {
       const a = (k / 24) * Math.PI * 2;
       DB.particles.push({
@@ -411,7 +434,6 @@
     DB.spawnParticles(cx, cy, 20, '#5ae8ff', 500);
     DB.sfx.hit();
 
-    // AOE 伤害
     for (const e of DB.enemies) {
       if (Math.hypot(e.x - cx, e.y - cy) < reflectRadius) {
         e.hp -= reflectDmg;
@@ -438,9 +460,7 @@
   };
 
   DB.calcWeaponDamage = function (baseDmg, targetX, targetY) {
-    // ===== 【新增】暴击率封顶 80% =====
     let critRate = Math.min(0.80, 0.15 + (state.mods.critRate || 0)); 
-    
     let critMult = 1.5 + (state.mods.critDmg || 0) + ((DB.upgrades.crit || 0) * 0.1);
     
     let isCrit = Math.random() < critRate;
@@ -499,7 +519,6 @@
       });
     }
 
-    // ===== 【防卡死重构】黑客专属：病毒连环引爆 =====
     if (state.mode === 'hacker' && e.virus) {
       const blastRadius = 160;
       const blastDmg = 30 + (state.wave * 5);
@@ -513,7 +532,6 @@
           other.flashT = 0.15;
           other.virus = true; 
           hitCount++;
-          // 【关键】不要在这里调 killEnemy，而是交由主循环清理！
         }
       }
       DB.spawnParticles(e.x, e.y, 30, '#ffcc00', 600);
@@ -526,8 +544,8 @@
     if (idx !== -1) DB.enemies.splice(idx, 1);
 
     if (e.type === 'splitter' && !e.isMini) {
-      const hpMult      = 1 + (state.wave - 1) * G.hpPerWave;
-      const waveDmgMult = 1 + (state.wave - 1) * G.enemyDmgPerWave;
+      const hpMult      = Math.pow(G.hpExponent, state.wave - 1);
+      const waveDmgMult = Math.pow(G.dmgExponent, state.wave - 1);
       for (let k = 0; k < 2; k++) {
         const angle = (k / 2) * Math.PI * 2 + Math.random() * 0.6;
         const dist = 42;
@@ -585,20 +603,8 @@
       const b = DB.boss;
       
       if (b.hp <= 0 && b.phase !== 'paralyzed') {
-        b.hp = 0;
-        b.phase = 'paralyzed';
-        state.qte.active = true;
-        state.qte.timer = b.isBig ? 9.0 : 7.0;
-        state.qte.inputIndex = 0;
-        
-        const seqLen = b.isBig ? 8 : 6; 
-        let seq = "";
-        for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
-        state.qte.sequence = seq;
-        
-        state.flash = 0.5;
-        state.hitstop = 0.15;
-        DB.sfx.hurt();
+        // 【修复】使用统一封装，触发 QTE 并清场
+        DB.triggerQTE(b);
       }
       
       if (b.flashT > 0) b.flashT -= dt;
@@ -708,10 +714,9 @@
           b.summonCd = (b.isBig ? 5.0 : 8.0) / speedScale * enRate;
           const count = Math.floor(((b.isBig ? 3 : 1) + Math.floor(state.wave / G.bossSummonDiv)) * (enrage ? 1.25 : 1));
           for (let c = 0; c < count; c++) {
-            const hpMult      = 1 + (state.wave - 1) * G.hpPerWave;
-            const waveDmgMult = 1 + (state.wave - 1) * G.enemyDmgPerWave;
+            const hpMult      = Math.pow(G.hpExponent, state.wave - 1);
+            const waveDmgMult = Math.pow(G.dmgExponent, state.wave - 1);
             
-            // 【修复】在 Boss 周围 200~350 距离随机生成，并散开
             const angle = Math.random() * Math.PI * 2;
             const dist = 200 + Math.random() * 150;
             const spawnX = DB.clamp(b.x + Math.cos(angle) * dist, 50, W - 50);
@@ -719,7 +724,7 @@
 
             DB.enemies.push({ 
               type: 'drone', x: spawnX, y: spawnY, 
-              baseX: spawnX, baseY: spawnY, // 锚点设为散开后的位置
+              baseX: spawnX, baseY: spawnY,
               seed: Math.random() * 100, 
               hp: ENEMY_HP * hpMult, maxHp: ENEMY_HP * hpMult, r: ENEMY_R, 
               dmg: Math.floor(10 * waveDmgMult),
@@ -755,23 +760,19 @@
       if (e.frozen > 0) { e.frozen -= dt; continue; }
 
       if (e.type === 'drone') {
-        // ===== 【新增】追踪玩家 AI =====
         const dxP = p.x - e.baseX;
         const dyP = p.y - e.baseY;
         const distP = Math.hypot(dxP, dyP);
         
-        // 如果离玩家超过 400 像素，就向玩家缓慢移动
         if (distP > 400) {
           const moveSpd = 100; 
           e.baseX += (dxP / distP) * moveSpd * dt;
           e.baseY += (dyP / distP) * moveSpd * dt;
         }
 
-        // 原有的波浪浮动效果（基于移动后的 baseX）
         e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
         e.y = e.baseY + Math.sin(state.t * 1.3 + e.seed * 2) * 18;
         
-        // 开火逻辑
         e.fireCd -= dt;
         if (e.fireCd <= 0) {
           e.fireCd = FIRE_INTERVAL + Math.random() * 0.6;
@@ -793,14 +794,13 @@
         const speed = (e.speed || DB.ENEMY_CFG.wormSpeed) * (1 + Math.sin(e.phase) * 0.15) * speedMult;
         e.x += (dx / d) * speed * dt;
         e.y += (dy / d) * speed * dt;
-          if (d < e.r + p.r) {
-            if (state.mode === 'defender' && state.skillActiveT > 0) {
-               DB.triggerReflectBlast(e.x, e.y, e.dmg);
-               e.hp -= 99999; // 撞盾直接粉碎
-            } else {
-               damagePlayer(e.dmg, e.x, e.y);
-            }
-            e.state = 'recover'; e.stateT = 0;
+        if (d < e.r + p.r) {
+          if (state.mode === 'defender' && state.skillActiveT > 0) {
+             DB.triggerReflectBlast(e.x, e.y, e.dmg);
+             e.hp -= 99999;
+          } else {
+             damagePlayer(e.dmg, e.x, e.y);
+          }
           killEnemy(i); 
         }
       }
@@ -813,15 +813,14 @@
         e.x += (dx / d) * moveSpeed * dt;
         e.y += (dy / d) * moveSpeed * dt;
 
-        // ===== 【修复】防秒杀碰撞冷却 =====
         if (e.hitCd === undefined) e.hitCd = 0;
         if (e.hitCd > 0) e.hitCd -= dt;
 
         if (d < e.r + p.r && e.hitCd <= 0) {
           if (state.mode === 'defender' && state.skillActiveT > 0) {
-            // 如果开盾，反伤并把它击退
             DB.triggerReflectBlast(e.x, e.y, e.dmg);
             e.hp -= 500;
+            if (e.hp <= 0) killEnemy(i); 
           } else {
             damagePlayer(e.dmg, e.x, e.y);
           }
@@ -876,7 +875,13 @@
           const dx = p.x - e.x, dy = p.y - e.y;
           const d = Math.hypot(dx, dy);
           if (d < e.r + p.r) {
-            damagePlayer(e.dmg, e.x, e.y);
+            if (state.mode === 'defender' && state.skillActiveT > 0) {
+               DB.triggerReflectBlast(e.x, e.y, e.dmg);
+               e.hp -= 99999; 
+               killEnemy(i); 
+            } else {
+               damagePlayer(e.dmg, e.x, e.y);
+            }
             e.state = 'recover'; e.stateT = 0;
             e.x = DB.clamp(e.x - e.dashDirX * 60, 40, W - 40);
             e.y = DB.clamp(e.y - e.dashDirY * 60, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 20);
@@ -903,7 +908,7 @@
         e.y += (dy / d) * moveSpeed * dt;
         e.x += Math.sin(state.t * 2 + e.seed) * 18 * dt;
         e.y += Math.cos(state.t * 1.5 + e.seed) * 18 * dt;
-                if (d < e.r + p.r) { 
+        if (d < e.r + p.r) { 
           if (state.mode === 'defender' && state.skillActiveT > 0) {
             DB.triggerReflectBlast(e.x, e.y, e.dmg);
             e.hp -= 99999;
@@ -915,7 +920,6 @@
       }
     }
 
-    // ===== 子弹碰撞与护盾反弹 =====
     for (let i = DB.enemyBullets.length - 1; i >= 0; i--) {
       const b = DB.enemyBullets[i];
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
@@ -927,51 +931,7 @@
       if (dx * dx + dy * dy < (b.r + hitRadius) * (b.r + hitRadius)) {
         if (isShielding) {
           DB.enemyBullets.splice(i, 1);
-          
-          // ===== 【强化】扩大弹反范围 & 极致视觉反馈 =====
-          const reflectRadius = 350; // 范围从 150 扩大到 350
-          const reflectDmg = (b.dmg || 10) * 2.5; // 伤害略微提升至 2.5 倍
-          let hitCount = 0;
-          
-          // 1. 在子弹碎裂处生成一圈青色冲击波
-          for(let k = 0; k < 24; k++) {
-             const a = (k / 24) * Math.PI * 2;
-             DB.particles.push({
-                x: b.x, y: b.y,
-                vx: Math.cos(a) * 800, vy: Math.sin(a) * 800,
-                life: 0.5, maxLife: 0.5, size: 5, color: '#5ae8ff', spin: 0, rot: 0
-             });
-          }
-          DB.spawnParticles(b.x, b.y, 20, '#5ae8ff', 500);
-          DB.sfx.hit();
-          
-          // 2. 对大范围内的所有敌人造成伤害
-          for (const e of DB.enemies) {
-            if (Math.hypot(e.x - b.x, e.y - b.y) < reflectRadius) {
-              e.hp -= reflectDmg;
-              e.flashT = 0.15;
-              hitCount++;
-              // 怪身上爆出白色电弧
-              DB.spawnParticles(e.x, e.y, 8, '#ffffff', 200);
-            }
-          }
-          // 对 Boss 判定
-          if (DB.boss && DB.boss.phase === 'normal') {
-            if (Math.hypot(DB.boss.x - b.x, DB.boss.y - b.y) < reflectRadius) {
-              DB.boss.hp -= reflectDmg;
-              DB.boss.flashT = 0.15;
-              hitCount++;
-            }
-          }
-          
-          // 3. 飘字提示（让玩家直观看到弹反了几个怪）
-          if (hitCount > 0 && DB.floaters) {
-            DB.floaters.push({ 
-              text: `⚡ 反射 x${hitCount}`, 
-              x: b.x, y: b.y - 30, vy: -50, life: 1, maxLife: 1, 
-              color: '#5ae8ff' 
-            });
-          }
+          DB.triggerReflectBlast(b.x, b.y, b.dmg); 
           continue;
         } else {
           damagePlayer(b.dmg || 10, b.x, b.y);
@@ -1010,10 +970,15 @@
         const dx = w.x - b.x, dy = w.y - b.y;
         if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          // 【修复】调用暴击函数
           const hitDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), b.x, b.y);
           b.hp -= hitDmg;
-          // 删掉原来那句白字的 floaters push，因为 calcWeaponDamage 里已经处理了暴击飘字
+          
+          if (w.type === 'code_slash') {
+             b.slowT = 3.0; b.vulnerable = 3.0;
+             if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: b.x, y: b.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
+             DB.spawnParticles(b.x, b.y, 15, '#00ffcc', 300);
+          }
+
           state.hitstop = Math.max(state.hitstop, 0.05);
           state.shake = Math.min(state.shake + 5, 22);
           DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
@@ -1030,15 +995,8 @@
           }
 
           if (b.hp <= 0) {
-            b.hp = 0; b.phase = 'paralyzed';
-            state.qte.active = true;
-            state.qte.timer = b.isBig ? 9.0 : 7.0; 
-            state.qte.inputIndex = 0;
-            const seqLen = b.isBig ? 8 : 6; 
-            let seq = "";
-            for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
-            state.qte.sequence = seq;
-            state.flash = 0.5; state.hitstop = 0.15;
+            // 【修复】统一调用
+            DB.triggerQTE(b);
           }
         }
       }
@@ -1056,17 +1014,23 @@
                DB.spawnParticles(w.x, w.y, 15, '#ffffff', 400);
                state.hitstop = Math.max(state.hitstop, 0.06);
                state.shake = Math.min(state.shake + 4, 20);
-               DB.sfx.error(); DB.removeWeapon(w);
+               DB.sfx.error();
+               DB.removeWeapon(w);
                break; 
             }
           }
 
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          // 【修复】调用暴击函数
           const finalDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), e.x, e.y);
           e.hp -= finalDmg;
           e.flashT = 0.12;
-          // 删掉原来那句白字 floaters push
+          
+          if (w.type === 'code_slash') {
+             e.slowT = 3.0; e.vulnerable = 3.0;
+             if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: e.x, y: e.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
+             DB.spawnParticles(e.x, e.y, 15, '#00ffcc', 300);
+          }
+
           state.hitstop = Math.max(state.hitstop, 0.045);
           state.shake   = Math.min(state.shake + 4, 22);
           DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);

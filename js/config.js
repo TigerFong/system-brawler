@@ -56,18 +56,18 @@ window.DB = window.DB || {};
   };
 
 DB.ENEMY_CFG = {
-  droneHp: 120,      // 原 30
-  wormHp: 180,       // 原 45
-  shieldHp: 350,     // 原 80
-  wormSpeed: 150,
-  chargerHp: 250,    // 原 55
-  turretHp: 400,     // 原 90
-  splitterHp: 220    // 原 60
+  droneHp: 240,      // 原 30
+  wormHp: 360,       // 原 45
+  shieldHp: 700,     // 原 80
+  wormSpeed: 300,
+  chargerHp: 500,    // 原 55
+  turretHp: 800,     // 原 90
+  splitterHp: 440    // 原 60
 };
 
 DB.BOSS_CFG = {
-  smallHp: 15000,     // 原 1500
-  bigHp: 50000,       // 原 4000
+  smallHp: 10000,     // 原 1500
+  bigHp: 30000,       // 原 4000
   radius: 80,
   fireInterval: 2.0,    
   summonInterval: 8.0  

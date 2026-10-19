@@ -8,7 +8,7 @@
 
   DB.GROWTH = {
     hpPerWave:            0.45,
-    enemyDmgPerWave:      0.30,   // 伤害成长
+    enemyDmgPerWave:      0.40,   // 伤害成长
     bossDmgPerWave:       0.35,   
     bossSpeedPerWave:     0.15,   
     

@@ -7,7 +7,7 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    hpPerWave:            0.45,
+    hpPerWave:            0.47,
     enemyDmgPerWave:      0.40,   // 伤害成长
     bossDmgPerWave:       0.35,   
     bossSpeedPerWave:     0.15,   
@@ -393,6 +393,50 @@
     state.combo = 0;
   }
 
+  // ===== 【新增】通用的反伤爆炸逻辑 =====
+  DB.triggerReflectBlast = function (cx, cy, baseDmg) {
+    const reflectRadius = 350;
+    const reflectDmg = (baseDmg || 10) * 2.5;
+    let hitCount = 0;
+
+    // 冲击波视觉
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      DB.particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(a) * 800, vy: Math.sin(a) * 800,
+        life: 0.5, maxLife: 0.5, size: 5, color: '#5ae8ff', spin: 0, rot: 0
+      });
+    }
+    DB.spawnParticles(cx, cy, 20, '#5ae8ff', 500);
+    DB.sfx.hit();
+
+    // AOE 伤害
+    for (const e of DB.enemies) {
+      if (Math.hypot(e.x - cx, e.y - cy) < reflectRadius) {
+        e.hp -= reflectDmg;
+        e.flashT = 0.15;
+        hitCount++;
+        DB.spawnParticles(e.x, e.y, 8, '#ffffff', 200);
+      }
+    }
+    if (DB.boss && DB.boss.phase === 'normal') {
+      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < reflectRadius) {
+        DB.boss.hp -= reflectDmg;
+        DB.boss.flashT = 0.15;
+        hitCount++;
+      }
+    }
+
+    if (hitCount > 0 && DB.floaters) {
+      DB.floaters.push({ 
+        text: `⚡ 反射 x${hitCount}`, 
+        x: cx, y: cy - 30, vy: -50, life: 1, maxLife: 1, 
+        color: '#5ae8ff' 
+      });
+    }
+  };
+
   DB.calcWeaponDamage = function (baseDmg, targetX, targetY) {
     // ===== 【新增】暴击率封顶 80% =====
     let critRate = Math.min(0.80, 0.15 + (state.mods.critRate || 0)); 
@@ -666,9 +710,17 @@
           for (let c = 0; c < count; c++) {
             const hpMult      = 1 + (state.wave - 1) * G.hpPerWave;
             const waveDmgMult = 1 + (state.wave - 1) * G.enemyDmgPerWave;
+            
+            // 【修复】在 Boss 周围 200~350 距离随机生成，并散开
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 200 + Math.random() * 150;
+            const spawnX = DB.clamp(b.x + Math.cos(angle) * dist, 50, W - 50);
+            const spawnY = DB.clamp(b.y + Math.sin(angle) * dist, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 20);
+
             DB.enemies.push({ 
-              type: 'drone', x: b.x + (Math.random()-0.5)*100, y: b.y + 60, 
-              baseX: b.x, baseY: b.y + 60, seed: Math.random() * 100, 
+              type: 'drone', x: spawnX, y: spawnY, 
+              baseX: spawnX, baseY: spawnY, // 锚点设为散开后的位置
+              seed: Math.random() * 100, 
               hp: ENEMY_HP * hpMult, maxHp: ENEMY_HP * hpMult, r: ENEMY_R, 
               dmg: Math.floor(10 * waveDmgMult),
               fireCd: 1.0, flashT: 0, frozen: 0 
@@ -703,15 +755,34 @@
       if (e.frozen > 0) { e.frozen -= dt; continue; }
 
       if (e.type === 'drone') {
+        // ===== 【新增】追踪玩家 AI =====
+        const dxP = p.x - e.baseX;
+        const dyP = p.y - e.baseY;
+        const distP = Math.hypot(dxP, dyP);
+        
+        // 如果离玩家超过 400 像素，就向玩家缓慢移动
+        if (distP > 400) {
+          const moveSpd = 100; 
+          e.baseX += (dxP / distP) * moveSpd * dt;
+          e.baseY += (dyP / distP) * moveSpd * dt;
+        }
+
+        // 原有的波浪浮动效果（基于移动后的 baseX）
         e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
         e.y = e.baseY + Math.sin(state.t * 1.3 + e.seed * 2) * 18;
+        
+        // 开火逻辑
         e.fireCd -= dt;
         if (e.fireCd <= 0) {
           e.fireCd = FIRE_INTERVAL + Math.random() * 0.6;
           const dx = p.x - e.x, dy = p.y - e.y;
           const d = Math.hypot(dx, dy) || 1;
           const bulletColor = state.mode === 'hacker' ? '#5ee6a8' : '#ff5a7a';
-          DB.enemyBullets.push({ x: e.x, y: e.y, vx: (dx / d) * BULLET_SPEED, vy: (dy / d) * BULLET_SPEED, r: BULLET_R, life: BULLET_LIFE, color: bulletColor, dmg: e.dmg });
+          DB.enemyBullets.push({ 
+            x: e.x, y: e.y, 
+            vx: (dx / d) * BULLET_SPEED, vy: (dy / d) * BULLET_SPEED, 
+            r: BULLET_R, life: BULLET_LIFE, color: bulletColor, dmg: e.dmg 
+          });
         }
       } 
       else if (e.type === 'worm') {
@@ -722,16 +793,46 @@
         const speed = (e.speed || DB.ENEMY_CFG.wormSpeed) * (1 + Math.sin(e.phase) * 0.15) * speedMult;
         e.x += (dx / d) * speed * dt;
         e.y += (dy / d) * speed * dt;
-        if (d < e.r + p.r) { damagePlayer(e.dmg, e.x, e.y); killEnemy(i); }
+          if (d < e.r + p.r) {
+            if (state.mode === 'defender' && state.skillActiveT > 0) {
+               DB.triggerReflectBlast(e.x, e.y, e.dmg);
+               e.hp -= 99999; // 撞盾直接粉碎
+            } else {
+               damagePlayer(e.dmg, e.x, e.y);
+            }
+            e.state = 'recover'; e.stateT = 0;
+          killEnemy(i); 
+        }
       }
       else if (e.type === 'shield') {
         const dx = p.x - e.x, dy = p.y - e.y;
         const d = Math.hypot(dx, dy) || 1;
         e.facing = dx > 0 ? 1 : -1; 
         const moveSpeed = (e.speed || 60) * ((e.slowT > 0) ? 0.4 : 1.0);
+        
         e.x += (dx / d) * moveSpeed * dt;
         e.y += (dy / d) * moveSpeed * dt;
-        if (d < e.r + p.r) damagePlayer(e.dmg, e.x, e.y);
+
+        // ===== 【修复】防秒杀碰撞冷却 =====
+        if (e.hitCd === undefined) e.hitCd = 0;
+        if (e.hitCd > 0) e.hitCd -= dt;
+
+        if (d < e.r + p.r && e.hitCd <= 0) {
+          if (state.mode === 'defender' && state.skillActiveT > 0) {
+            // 如果开盾，反伤并把它击退
+            DB.triggerReflectBlast(e.x, e.y, e.dmg);
+            e.hp -= 500;
+          } else {
+            damagePlayer(e.dmg, e.x, e.y);
+          }
+          e.hitCd = 1.0; 
+          
+          const pushForce = 180;
+          e.x -= (dx / d) * pushForce * dt;
+          e.y -= (dy / d) * pushForce * dt;
+          p.vx += (dx / d) * 400;
+          p.vy += (dy / d) * 400;
+        }
       }
       else if (e.type === 'turret') {
         const dx = p.x - e.x, dy = p.y - e.y;
@@ -802,7 +903,15 @@
         e.y += (dy / d) * moveSpeed * dt;
         e.x += Math.sin(state.t * 2 + e.seed) * 18 * dt;
         e.y += Math.cos(state.t * 1.5 + e.seed) * 18 * dt;
-        if (d < e.r + p.r) { damagePlayer(e.dmg, e.x, e.y); killEnemy(i); }
+                if (d < e.r + p.r) { 
+          if (state.mode === 'defender' && state.skillActiveT > 0) {
+            DB.triggerReflectBlast(e.x, e.y, e.dmg);
+            e.hp -= 99999;
+          } else {
+            damagePlayer(e.dmg, e.x, e.y); 
+          }
+          killEnemy(i); 
+        }
       }
     }
 
@@ -818,21 +927,50 @@
       if (dx * dx + dy * dy < (b.r + hitRadius) * (b.r + hitRadius)) {
         if (isShielding) {
           DB.enemyBullets.splice(i, 1);
-          DB.spawnParticles(b.x, b.y, 15, '#5ae8ff', 400);
+          
+          // ===== 【强化】扩大弹反范围 & 极致视觉反馈 =====
+          const reflectRadius = 350; // 范围从 150 扩大到 350
+          const reflectDmg = (b.dmg || 10) * 2.5; // 伤害略微提升至 2.5 倍
+          let hitCount = 0;
+          
+          // 1. 在子弹碎裂处生成一圈青色冲击波
+          for(let k = 0; k < 24; k++) {
+             const a = (k / 24) * Math.PI * 2;
+             DB.particles.push({
+                x: b.x, y: b.y,
+                vx: Math.cos(a) * 800, vy: Math.sin(a) * 800,
+                life: 0.5, maxLife: 0.5, size: 5, color: '#5ae8ff', spin: 0, rot: 0
+             });
+          }
+          DB.spawnParticles(b.x, b.y, 20, '#5ae8ff', 500);
           DB.sfx.hit();
           
-          const reflectDmg = (b.dmg || 10) * 2;
+          // 2. 对大范围内的所有敌人造成伤害
           for (const e of DB.enemies) {
-            if (Math.hypot(e.x - b.x, e.y - b.y) < 150) {
+            if (Math.hypot(e.x - b.x, e.y - b.y) < reflectRadius) {
               e.hp -= reflectDmg;
               e.flashT = 0.15;
+              hitCount++;
+              // 怪身上爆出白色电弧
+              DB.spawnParticles(e.x, e.y, 8, '#ffffff', 200);
             }
           }
+          // 对 Boss 判定
           if (DB.boss && DB.boss.phase === 'normal') {
-            if (Math.hypot(DB.boss.x - b.x, DB.boss.y - b.y) < 150) {
+            if (Math.hypot(DB.boss.x - b.x, DB.boss.y - b.y) < reflectRadius) {
               DB.boss.hp -= reflectDmg;
               DB.boss.flashT = 0.15;
+              hitCount++;
             }
+          }
+          
+          // 3. 飘字提示（让玩家直观看到弹反了几个怪）
+          if (hitCount > 0 && DB.floaters) {
+            DB.floaters.push({ 
+              text: `⚡ 反射 x${hitCount}`, 
+              x: b.x, y: b.y - 30, vy: -50, life: 1, maxLife: 1, 
+              color: '#5ae8ff' 
+            });
           }
           continue;
         } else {

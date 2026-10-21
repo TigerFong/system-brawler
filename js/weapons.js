@@ -7,18 +7,15 @@
   const W     = CFG.W;
   const H     = CFG.H;
 
-  /* ---------- 计数 ---------- */
   function countActiveWeapons() {
     let n = 0;
     for (const w of DB.weapons) if (!w.dead) n++;
     return n;
   }
 
-  /* ---------- 动态生成点 ---------- */
   function pickSpawnPoint() {
     const camX = DB.state.camera.x;
     const camY = DB.state.camera.y;
-    
     const marginX = 120;
     const marginY = 120;
     const viewMinX = DB.clamp(camX + marginX, 0, CFG.W - marginX * 2);
@@ -29,7 +26,6 @@
     for (let attempt = 0; attempt < 15; attempt++) {
       const px = viewMinX + Math.random() * (viewMaxX - viewMinX);
       const py = viewMinY + Math.random() * (viewMaxY - viewMinY);
-      
       const distToPlayer = Math.hypot(px - DB.player.x, py - DB.player.y);
       if (distToPlayer < 150 || distToPlayer > CFG.GRAB_RANGE * 1.8) continue;
 
@@ -39,18 +35,14 @@
       }
       if (safe) return { x: px, y: py };
     }
-    
     return {
       x: DB.player.x + (Math.random() > 0.5 ? 1 : -1) * (200 + Math.random() * 200),
       y: DB.clamp(DB.player.y + (Math.random() - 0.5) * 300, CFG.PLAY_TOP, CFG.GROUND_Y)
     };
   }
 
-  /* ---------- 生成 ---------- */
   DB.spawnWeapon = function (type, customText, customDmg) {
     const isCode = type === 'code_slash';
-    
-    // 【新增】全场同时只能存在一把代码武器（打出去了才能再撕）
     if (isCode) {
       const exists = DB.weapons.some(w => w.type === 'code_slash' && !w.dead);
       if (exists) {
@@ -89,7 +81,14 @@
       safeTimer: 3.0,
       el: null,
       anchorX: 0,
-      anchorY: 0
+      anchorY: 0,
+      deployed: false,
+      deployT: 0,
+      deployMaxT: 1,
+      tickCd: 0,
+      lastTensionTier: 0,
+      homing: false,
+      homingTarget: null
     };
 
     DB.weapons.push(w);
@@ -99,9 +98,13 @@
   DB.createWeaponEl = function(w) {
     const el = document.createElement('div');
     el.className = 'weapon';
-    
+
+    if (state.mode === 'hacker') {
+      el.classList.add('hacker-weapon');
+    }
+
     if (w.type === 'code_slash') {
-      el.style.width = w.def.w + 'px'; 
+      el.style.width = w.def.w + 'px';
       el.style.height = w.def.h + 'px';
       el.style.padding = '0 10px';
       el.style.color = '#00ffcc';
@@ -116,28 +119,24 @@
       el.style.textOverflow = 'ellipsis';
       el.style.display = 'flex';
       el.style.alignItems = 'center';
-      el.textContent = w.displayText; 
+      el.textContent = w.displayText;
     } else {
-      if (state.mode === 'hacker') { /* ... */ }
       el.style.width  = w.def.w + 'px';
       el.style.height = w.def.h + 'px';
       el.textContent = w.def.label;
     }
-    
     layer.appendChild(el);
     return el;
   }
 
   function positionWeaponEl(w) {
-    if (!w.el) return;
+    if (!w.el || w.deployed) return;
     const bob = w.thrown ? 0 : Math.sin(state.t * 2.6 + w.seed) * 4;
     const tx = w.x - w.def.w / 2;
     const ty = w.y - w.def.h / 2 + bob;
-    w.el.style.transform =
-      `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${w.rot.toFixed(4)}rad)`;
+    w.el.style.transform = `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${w.rot.toFixed(4)}rad)`;
   }
 
-  /* ---------- 移除 ---------- */
   DB.removeWeapon = function (w) {
     if (w.dead) return;
     w.dead = true;
@@ -145,25 +144,18 @@
 
     const i = DB.weapons.indexOf(w);
     if (i >= 0) DB.weapons.splice(i, 1);
-
     if (DB.heldWeapon === w) DB.heldWeapon = null;
   };
 
-  /* ---------- 抓取 ---------- */
   DB.tryGrab = function (mx, my) {
     let best = null;
     let bestD = Infinity;
-
     for (const w of DB.weapons) {
-      if (w.dead || w.warning > 0 || w.held) continue;
+      if (w.dead || w.warning > 0 || w.held || w.deployed) continue;
       const d = Math.hypot(w.x - mx, w.y - my);
       const pickR = state.mode === 'hacker' ? CFG.GRAB_PICK_R + 20 : CFG.GRAB_PICK_R;
-      if (d < w.r + pickR && d < bestD) {
-        bestD = d;
-        best = w;
-      }
+      if (d < w.r + pickR && d < bestD) { bestD = d; best = w; }
     }
-
     if (!best) return;
 
     const grabRange = CFG.GRAB_RANGE + state.mods.grab;
@@ -175,31 +167,28 @@
 
     if (best.corrupted) {
       DB.spawnParticles(best.x, best.y, 30, '#ff5a7a', 500);
-      DB.spawnParticles(best.x, best.y, 15, '#ffffff', 600);
       state.hp = Math.max(0, state.hp - 15);
       state.damageFlash = Math.max(state.damageFlash, 0.6);
-      state.shake = 26;
-      state.hitstop = 0.08;
-      DB.sfx.hurt();
-      DB.removeWeapon(best);
+      state.shake = 26; state.hitstop = 0.08;
+      DB.sfx.hurt(); DB.removeWeapon(best);
       return;
     }
 
-    best.held   = true;
+    best.held = true;
     best.thrown = false;
+    best.homing = false;
+    best.homingTarget = null;
     best.vx = 0; best.vy = 0; best.rotV = 0;
-    
+    best.lastTensionTier = 0;
     if (state.mode !== 'hacker') {
       best.anchorX = best.x;
       best.anchorY = best.y;
     }
-    
     if (best.el) best.el.classList.add('held');
     DB.sfx.grab();
     DB.heldWeapon = best;
   };
 
-  /* ---------- 释放 ---------- */
   DB.releaseThrow = function () {
     const w = DB.heldWeapon;
     if (!w) return;
@@ -208,171 +197,200 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
-    // ===== 黑客：指哪打哪 =====
+    // ===== 【修复】黑客方：远程投送部署武器 =====
     if (state.mode === 'hacker') {
       const p = DB.player;
       const mouse = DB.mouse;
-      const dx = mouse.x - p.x; 
-      const dy = mouse.y - p.y;
+      const dx = mouse.x - p.x; const dy = mouse.y - p.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 30) {
-        w.thrown = false;
-        w.vx = 0; w.vy = 0;
+      if (dist >= 30) {
+        const dirX = dx / dist, dirY = dy / dist;
+        const range = CFG.VIEW_W * 2;
+
+        // 执行射线检测
+        const hit = DB.hitscanHit(p.x, p.y, p.x + dirX * range, p.y + dirY * range, w);
+
+        if (hit) {
+          // 【命中敌人】：在敌人身上触发效果，并原地生成阵地
+          if (w.def.effect === 'pull' && DB.triggerLink) DB.triggerLink(hit.x, hit.y, hit.finalDmg);
+          else if (w.def.effect === 'earthquake' && DB.triggerQuake) DB.triggerQuake(hit.x, hit.y, hit.finalDmg);
+          else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) DB.triggerBlackhole(hit.x, hit.y, hit.finalDmg);
+          else if (w.def.effect === 'chain' && DB.triggerChain) DB.triggerChain(hit.x, hit.y, hit.finalDmg);
+
+          if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
+            // 在怪身上部署
+            w.x = hit.x;
+            w.y = hit.y;
+            w.deployed = true;
+            w.thrown = false;
+            w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
+            w.deployMaxT = w.deployT;
+            w.tickCd = 0.05;
+            if (w.el) w.el.style.display = 'none';
+            DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+          } else {
+            // 普通武器打中直接销毁
+            DB.removeWeapon(w);
+          }
+        } else {
+          // 【打空了】：部署在鼠标瞄准的落点，或飞出屏幕
+          if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
+            w.x = DB.clamp(mouse.x, 40, W - 40);
+            w.y = DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
+            w.deployed = true;
+            w.thrown = false;
+            w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
+            w.deployMaxT = w.deployT;
+            w.tickCd = 0.05;
+            if (w.el) w.el.style.display = 'none';
+            DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+            DB.sfx.chip();
+          } else {
+            // 普通武器打空，飞出去
+            w.thrown = true; w.age = 0;
+            w.vx = dirX * 1800; w.vy = dirY * 1800;
+            if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
+            else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20; }
+            DB.sfx.throw();
+          }
+        }
+        return;
       } else {
-        w.thrown = true;
-        w.age = 0;
-        
-        const speed = 1800; 
-        w.vx = (dx / dist) * speed;
-        w.vy = (dy / dist) * speed;
-        
-        // 【修复】代码武器取消旋转
-        if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
-        else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20; }
-        
-        state.shake = Math.min(state.shake + 4, 15);
-        DB.spawnParticles(w.x, w.y, 10, '#ffcc00', 300);
-        DB.sfx.throw();
+        // 鼠标太近，普通武器不处理，部署武器落在脚下
+        if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
+          w.deployed = true;
+          w.thrown = false;
+          w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
+          w.deployMaxT = w.deployT;
+          w.tickCd = 0.05;
+          if (w.el) w.el.style.display = 'none';
+          DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+        }
+        return;
       }
-      return;
     }
 
-    // ===== 防守方：拉弓 =====
-    const SL = CFG.SLINGSHOT;
-    const dx = w.x - w.anchorX;
-    const dy = w.y - w.anchorY;
-    const pullDist = Math.hypot(dx, dy);
-
-    if (pullDist < SL.MIN_PULL) {
+    // ===== 防守方的部署分支 =====
+    if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
+      w.deployed = true;
       w.thrown = false;
       w.vx = 0; w.vy = 0; w.rotV = 0;
-      w.anchorX = 0; w.anchorY = 0;
+      w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
+      w.deployMaxT = w.deployT;
+      w.tickCd = 0.05;
+
+      if (w.el) w.el.style.display = 'none';
+      DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+      DB.sfx.chip();
       return;
     }
 
-    const inv  = 1 / pullDist;
-    const dirX = -dx * inv;
-    const dirY = -dy * inv;
+    // ===== 防守方的拉弓分支 =====
+    const SL = CFG.SLINGSHOT;
+    const dx = w.x - w.anchorX; const dy = w.y - w.anchorY;
+    const pullDist = Math.hypot(dx, dy);
+
+    if (pullDist < SL.MIN_PULL) return;
 
     const t = DB.clamp(pullDist / SL.MAX_PULL, 0, 1);
-    let speed = SL.MIN_LAUNCH + (SL.MAX_LAUNCH - SL.MIN_LAUNCH) * t;
-    speed *= (1 + state.mods.launch);
+    const speed = (SL.MIN_LAUNCH + (SL.MAX_LAUNCH - SL.MIN_LAUNCH) * t) * (1 + state.mods.launch);
+    const dirX = -dx / pullDist; const dirY = -dy / pullDist;
 
-    w.thrown = true;
-    w.age = 0;
-    w.vx = dirX * speed;
-    w.vy = dirY * speed;
-    
-    // 【修复】代码武器取消旋转
+    w.thrown = true; w.age = 0;
+    w.vx = dirX * speed; w.vy = dirY * speed;
     if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
     else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14); }
 
-    if (t > 0.15) {
-      state.shake = Math.min(state.shake + 2 + t * 8, 22);
-      DB.spawnParticles(w.x, w.y, Math.floor(4 + t * 14), '#8fd8ff', 200 + t * 300);
-    }
     DB.sfx.throw();
-    if (t >= SL.FULL_TENSION) {
-      state.flash = Math.max(state.flash, 0.12);
-      DB.spawnParticles(w.x, w.y, 18, '#ffffff', 420);
-    }
-
-    w.anchorX = 0;
-    w.anchorY = 0;
   };
 
-  /* ---------- 地震特效 ---------- */
   DB.triggerQuake = function (cx, cy, dmg) {
-    state.shake = 35;
-    state.hitstop = 0.08;
-    state.flash = Math.max(state.flash, 0.3);
-    DB.sfx.error();
-
-    for (let i = DB.enemies.length - 1; i >= 0; i--) {
-      const e = DB.enemies[i];
-      e.hp -= dmg;
-      e.flashT = 0.15;
-      if (DB.floaters) DB.floaters.push({ text: `-${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffcc00' });
-      if (e.hp <= 0) {
-        const color = e.type === 'worm' ? '#5ee6a8' : '#ff7a9a';
-        DB.spawnParticles(e.x, e.y, 24, color, 460);
-        state.energy = Math.min(state.energyMax, state.energy + 8);
-        if (DB.killEnemy) DB.killEnemy(i);
-        else DB.enemies.splice(i, 1);
-      }
-    }
-
-    for (let i = 0; i < 40; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = 600 + Math.random() * 400;
-      DB.particles.push({
-        x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        life: 0.6, maxLife: 0.6, size: 5 + Math.random() * 5,
-        color: '#ffcc00', spin: 0, rot: a
-      });
-    }
-  };
-
-  /* ---------- 黑洞特效 ---------- */
-  DB.triggerBlackhole = function (cx, cy, dmg) {
-    state.shake = 20;
+    state.shake = Math.max(state.shake, 22);
+    state.hitstop = Math.max(state.hitstop, 0.04);
     DB.sfx.error();
     for (const e of DB.enemies) {
+      if (Math.hypot(e.x - cx, e.y - cy) < 300) {
+        e.hp -= dmg * 2;
+        e.flashT = 0.15;
+      }
+    }
+    if (DB.boss && DB.boss.phase === 'normal') {
+      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) DB.boss.hp -= dmg * 2;
+    }
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      DB.particles.push({ x: cx, y: cy, vx: Math.cos(a) * 800, vy: Math.sin(a) * 800, life: 0.6, maxLife: 0.6, size: 6, color: '#ffcc00', spin: 0, rot: a });
+    }
+  };
+
+  DB.triggerBlackhole = function (cx, cy, dmg) {
+    state.shake = Math.max(state.shake, 10);
+    for (const e of DB.enemies) {
       const dx = cx - e.x, dy = cy - e.y;
-      const d = Math.max(1, Math.hypot(dx, dy)); 
-      if (d < 250) {
-        e.x += (dx / d) * 300 * (1 - d / 250);
-        e.y += (dy / d) * 300 * (1 - d / 250);
-        e.hp -= dmg * 1.5;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      if (d < 300) {
+        e.x += (dx / d) * 400 * (1 - d / 300);
+        e.y += (dy / d) * 400 * (1 - d / 300);
+        e.hp -= dmg * 0.5;
         e.flashT = 0.1;
       }
     }
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 15; i++) {
       const a = Math.random() * Math.PI * 2;
-      const dist = 50 + Math.random() * 200;
+      const dist = 50 + Math.random() * 250;
+      DB.particles.push({ x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist, vx: -Math.cos(a) * 600, vy: -Math.sin(a) * 600, life: 0.8, maxLife: 0.8, size: 6, color: '#c08bff', spin: 0, rot: a });
+    }
+  };
+
+  DB.triggerBlackholeBurst = function (cx, cy, dmg) {
+    state.shake = Math.max(state.shake, 8);
+    for (const e of DB.enemies) {
+      const dx = cx - e.x, dy = cy - e.y;
+      if (Math.hypot(dx, dy) < 300) {
+        e.hp -= dmg * 0.6;
+        e.flashT = 0.1;
+      }
+    }
+    if (DB.boss && DB.boss.phase === 'normal') {
+      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) {
+        DB.boss.hp -= dmg * 0.6;
+        DB.boss.flashT = 0.1;
+      }
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = 30 + Math.random() * 200;
       DB.particles.push({
         x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist,
-        vx: -Math.cos(a) * 400, vy: -Math.sin(a) * 400,
-        life: 0.8, maxLife: 0.8, size: 6,
-        color: '#c08bff', spin: 10, rot: a
+        vx: -Math.cos(a) * 500, vy: -Math.sin(a) * 500,
+        life: 0.5, maxLife: 0.5, size: 5, color: '#c08bff', spin: 0, rot: a
       });
     }
   };
 
-  /* ---------- 连锁闪电特效 ---------- */
   DB.triggerChain = function (cx, cy, baseDmg) {
     let lastX = cx, lastY = cy;
     let currentDmg = baseDmg;
-    
-    for (let chain = 0; chain < 4; chain++) {
-      let nearest = null, minD = Infinity;
+    for (let chain = 0; chain < 3; chain++) {
+      let nearest = null, minD = 250;
       for (const e of DB.enemies) {
         const d = Math.hypot(e.x - lastX, e.y - lastY);
-        if (d < 300 && d < minD && e.hp > 0) {
-          minD = d; nearest = e;
-        }
+        if (d < minD && e.hp > 0) { minD = d; nearest = e; }
       }
       if (!nearest) break;
 
       for (let i = 0; i < 10; i++) {
         const t = i / 10;
-        DB.particles.push({
-          x: lastX + (nearest.x - lastX) * t + (Math.random()-0.5)*30,
-          y: lastY + (nearest.y - lastY) * t + (Math.random()-0.5)*30,
-          vx: 0, vy: 0, life: 0.2, maxLife: 0.2, size: 4,
-          color: '#5ae8ff', spin: 0, rot: 0
-        });
+        DB.particles.push({ x: lastX + (nearest.x - lastX) * t + (Math.random()-0.5)*20, y: lastY + (nearest.y - lastY) * t + (Math.random()-0.5)*20, vx: 0, vy: 0, life: 0.15, maxLife: 0.15, size: 4, color: '#5ae8ff', spin: 0, rot: 0 });
       }
-
       nearest.hp -= currentDmg;
       nearest.flashT = 0.15;
-      currentDmg *= 0.75;
+      currentDmg *= 0.8;
       lastX = nearest.x; lastY = nearest.y;
     }
   };
 
-  /* ---------- 物理更新 ---------- */
   DB.updateWeapons = function (dt) {
     const arr = DB.weapons;
     const SL  = CFG.SLINGSHOT;
@@ -382,554 +400,407 @@
       const w = arr[i];
       if (w.dead) continue;
 
+      if (w.deployed) {
+        w.deployT -= dt;
+        if (w.deployT <= 0) {
+          DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+          DB.removeWeapon(w);
+          continue;
+        }
+
+        if (w.type === 'blackhole') {
+          for (const e of DB.enemies) {
+            const dx = w.x - e.x, dy = w.y - e.y;
+            const d = Math.max(1, Math.hypot(dx, dy));
+            if (d < 300 && d > 8) {
+              const pullStr = 260 * (1 - d / 300);
+              e.x += (dx / d) * pullStr * dt;
+              e.y += (dy / d) * pullStr * dt;
+              if (e.type === 'drone') {
+                e.baseX += (dx / d) * pullStr * dt;
+                e.baseY += (dy / d) * pullStr * dt;
+              }
+            }
+          }
+        }
+
+        w.tickCd = (w.tickCd || 0) - dt;
+        if (w.tickCd <= 0) {
+          const tickIntervals = { gravity: 0.8, blackhole: 0.4, chain: 0.5 };
+          w.tickCd = tickIntervals[w.type] || 0.5;
+          const dmg = w.baseDamage * (1 + state.mods.damage);
+          if (w.type === 'gravity')   DB.triggerQuake(w.x, w.y, dmg);
+          else if (w.type === 'blackhole') DB.triggerBlackholeBurst(w.x, w.y, dmg);
+          else if (w.type === 'chain')     DB.triggerChain(w.x, w.y, dmg);
+        }
+        continue;
+      }
+
       if (w.warning > 0) {
         w.warning -= dt;
-        if (w.warning <= 0) {
-          w.warning = 0;
-          w.el = DB.createWeaponEl(w);
-          positionWeaponEl(w);
-        }
+        if (w.warning <= 0) { w.warning = 0; w.el = DB.createWeaponEl(w); positionWeaponEl(w); }
         continue;
       }
 
       w.age += dt;
-      
-      if (w.safeTimer > 0) {
-        w.safeTimer -= dt;
-        if (w.el) {
-          w.el.style.boxShadow = '0 0 15px #5ae8ff, 0 0 5px #5ae8ff inset';
-          w.el.style.borderColor = '#5ae8ff';
-        }
-      } else if (w.el && !w.corrupted) {
-        w.el.style.boxShadow = '';
-        w.el.style.borderColor = '';
-      }
-
-      if (w.age > lifetime) {
-        DB.spawnParticles(w.x, w.y, 8, '#6a7fa8', 140);
+      if (w.age > lifetime && !w.held) {
         DB.removeWeapon(w);
         continue;
       }
 
-      if (w.hitCd > 0) w.hitCd -= dt;
-
       if (w.held) {
         const mouse = DB.mouse;
-        
         if (state.mode === 'hacker') {
           const k = 1 - Math.exp(-30 * dt);
-          w.x += (mouse.x - w.x) * k;
-          w.y += (mouse.y - w.y) * k;
+          w.x += (mouse.x - w.x) * k; w.y += (mouse.y - w.y) * k;
           w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
-          w.vx = 0; w.vy = 0;
         } else {
-          let tx = mouse.x;
-          let ty = mouse.y;
-          const ddx = tx - w.anchorX;
-          const ddy = ty - w.anchorY;
-          const dd  = Math.hypot(ddx, ddy);
-          if (dd > SL.MAX_PULL) {
-            const k = SL.MAX_PULL / dd;
-            tx = w.anchorX + ddx * k;
-            ty = w.anchorY + ddy * k;
-          }
-
+          let tx = mouse.x, ty = mouse.y;
+          const ddx = tx - w.anchorX, ddy = ty - w.anchorY;
+          const dd = Math.hypot(ddx, ddy);
+          if (dd > SL.MAX_PULL) { tx = w.anchorX + (ddx/dd)*SL.MAX_PULL; ty = w.anchorY + (ddy/dd)*SL.MAX_PULL; }
           const k = 1 - Math.exp(-26 * dt);
-          w.x += (tx - w.x) * k;
-          w.y += (ty - w.y) * k;
-          w.rot += (0 - w.rot) * Math.min(1, 12 * dt);
-          w.vx = 0; w.vy = 0;
+          w.x += (tx - w.x) * k; w.y += (ty - w.y) * k;
 
-          const pull = Math.hypot(w.x - w.anchorX, w.y - w.anchorY);
-          if (pull > SL.MAX_PULL * 0.7) {
-            const jitter = (pull / SL.MAX_PULL) * 1.6;
-            w.x += (Math.random() - 0.5) * jitter;
-            w.y += (Math.random() - 0.5) * jitter;
+          const ratio = dd / SL.MAX_PULL;
+          const prevTier = w.lastTensionTier || 0;
+          let curTier = 0;
+          if (ratio >= SL.FULL_TENSION) curTier = 2;
+          else if (ratio >= 0.60)      curTier = 1;
+          if (curTier > prevTier) {
+            if (curTier === 2) DB.sfx.fullTension();
+            else               DB.sfx.tension();
           }
+          w.lastTensionTier = curTier;
         }
       }
       else if (!w.thrown) {
-        const p = DB.player;
-        const dx = p.x - w.x;
-        const dy = p.y - w.y;
-        const d  = Math.hypot(dx, dy);
+        const p = DB.player; const dx = p.x - w.x; const dy = p.y - w.y; const d = Math.hypot(dx, dy);
         if (d < 100 && d > 56) {
-          const pull = (1 - d / 100) * 220 * dt;
-          w.x += (dx / d) * pull;
-          w.y += (dy / d) * pull;
+          w.x += (dx / d) * 220 * dt; w.y += (dy / d) * 220 * dt;
         }
       }
       else {
-        // ===== 飞行物理 =====
-        if (w.homing) {
-          let target = w.homingTarget;
-          
-          if (!target || target.hp <= 0 || (target !== DB.boss && DB.enemies.indexOf(target) === -1)) {
-            let minDist = Infinity;
-            for (const e of DB.enemies) {
-              const d = Math.hypot(w.x - e.x, w.y - e.y);
-              if (d < minDist) { minDist = d; target = e; }
-            }
-            if (!target && DB.boss && DB.boss.phase === 'normal') target = DB.boss;
-            w.homingTarget = target;
-          }
+        if (w.homing && w.homingTarget) {
+          const t = w.homingTarget;
+          const targetValid = !t.dead
+            && (t.hp === undefined || t.hp > 0)
+            && (t.phase === undefined || t.phase === 'normal');
 
-          if (target) {
-            const dx = target.x - w.x, dy = target.y - w.y;
+          if (targetValid) {
+            const dx = t.x - w.x, dy = t.y - w.y;
             const d = Math.hypot(dx, dy) || 1;
-            const speed = 1500;
-            const targetVx = (dx / d) * speed;
-            const targetVy = (dy / d) * speed;
-            w.vx += (targetVx - w.vx) * Math.min(1, 20 * dt);
-            w.vy += (targetVy - w.vy) * Math.min(1, 20 * dt);
-            w.rot = Math.atan2(w.vy, w.vx) + Math.PI / 4; 
+            const homingSpeed = 1400;
+            const curSpeed = Math.hypot(w.vx, w.vy);
+
+            if (curSpeed < 200) {
+              w.vx = (dx / d) * homingSpeed;
+              w.vy = (dy / d) * homingSpeed;
+            } else {
+              const tx = (dx / d) * homingSpeed;
+              const ty = (dy / d) * homingSpeed;
+              const lerp = Math.min(1, 14 * dt);
+              w.vx += (tx - w.vx) * lerp;
+              w.vy += (ty - w.vy) * lerp;
+            }
+
+            if (Math.random() < 0.6) {
+              DB.particles.push({
+                x: w.x + (Math.random() - 0.5) * 12,
+                y: w.y + (Math.random() - 0.5) * 12,
+                vx: (Math.random() - 0.5) * 80,
+                vy: (Math.random() - 0.5) * 80,
+                life: 0.3, maxLife: 0.3, size: 5,
+                color: '#ffcc00', spin: 0, rot: 0
+              });
+            }
           } else {
             w.homing = false;
+            w.homingTarget = null;
           }
-        } else {
+        }
+
+        if (!w.homing) {
           if (state.mode === 'hacker') {
-            w.vy += CFG.GRAVITY * 0.1 * dt; 
-            w.vx *= Math.exp(-0.2 * dt); 
+            w.vy += CFG.GRAVITY * 0.1 * dt;
+            w.vx *= Math.exp(-0.2 * dt);
           } else {
             w.vy += CFG.GRAVITY * dt;
             w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
           }
         }
 
-        w.x += w.vx * dt;
-        w.y += w.vy * dt;
-        if (!w.homing) w.rot += w.rotV * dt;
+        w.x += w.vx * dt; w.y += w.vy * dt;
+        w.rot += w.rotV * dt;
 
-        // ===== 命中判定 =====
-        if (state.mode === 'hacker' && w.thrown) {
-          let hitSomething = false;
-          const hitRadiusBonus = w.homing ? 30 : 15;
-
-          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
-            const e = DB.enemies[ei];
-            if (Math.hypot(w.x - e.x, w.y - e.y) < w.r + e.r + hitRadiusBonus) {
-              DB.sfx.error();
-              state.hitstop = Math.max(state.hitstop, 0.06);
-              state.shake = Math.min(state.shake + 8, 25);
-              DB.spawnParticles(e.x, e.y, 25, '#c08bff', 500);
-
-              const finalDmg = DB.calcWeaponDamage(w.baseDamage * 4.0 * (1 + state.mods.damage), e.x, e.y);
-
-              if (w.type === 'light_dart') {
-                const dmg = finalDmg * 2.0;
-                DB.damageEnemy(e, ei, dmg, false);
-                if (e.hp > 0) e.vulnerable = 5.0;
-                if (DB.floaters) DB.floaters.push({ text: `防御瓦解 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ff7a9a' });
-              } 
-              else if (w.type === 'stun_chip') {
-                DB.damageEnemy(e, ei, finalDmg, false);
-                if (e.hp > 0) e.slowT = 5.0;
-                if (DB.floaters) DB.floaters.push({ text: `系统卡顿 -${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ae8ff' });
-              } 
-              else if (w.type === 'fire_shield') {
-                const dmg = finalDmg * 3 + (e.maxHp * 0.15);
-                DB.damageEnemy(e, ei, dmg, false);
-                if (DB.floaters) DB.floaters.push({ text: `文件加密 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#ffcc00' });
-              } 
-              else if (w.type === 'link') {
-                DB.damageEnemy(e, ei, finalDmg, false);
-                if (e.hp > 0) {
-                  const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
-                  const pd = Math.hypot(pdx, pdy) || 1;
-                  e.x += (pdx / pd) * 200; 
-                  e.y += (pdy / pd) * 200;
-                  e.vulnerable = 3.0;
-                }
-                if (DB.floaters) DB.floaters.push({ text: `强制牵引 -${Math.round(finalDmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#c08bff' });
-              } 
-              else if (w.type === 'gravity') {
-                const dmg = finalDmg * 4;
-                DB.damageEnemy(e, ei, dmg, true); 
-                state.energy = Math.min(state.energyMax, state.energy + 20);
-                if (DB.floaters) DB.floaters.push({ text: `数据窃取 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ee6a8' });
-              }
-              else if (w.type === 'blackhole') {
-                const dmg = finalDmg * 2.5;
-                DB.damageEnemy(e, ei, dmg, false);
-                if (DB.triggerBlackhole) DB.triggerBlackhole(e.x, e.y, finalDmg * 1.5);
-                if (DB.floaters) DB.floaters.push({ text: `断网封锁 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#c08bff' });
-              }
-              else if (w.type === 'chain') {
-                const dmg = finalDmg * 2.0;
-                DB.damageEnemy(e, ei, dmg, false);
-                if (DB.triggerChain) DB.triggerChain(e.x, e.y, finalDmg * 1.2);
-                if (DB.floaters) DB.floaters.push({ text: `病毒传染 -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#5ae8ff' });
-              }
-              else if (w.type === 'code_slash') {
-                const dmg = finalDmg * 1.5;
-                DB.damageEnemy(e, ei, dmg, false);
-                if (e.hp > 0) {
-                  e.slowT = 3.0;
-                  e.vulnerable = 3.0;
-                }
-                if (DB.floaters) DB.floaters.push({ text: `GLITCH! -${Math.round(dmg)}`, x: e.x, y: e.y - 30, vy: -50, life: 1, maxLife: 1, color: '#00ffcc' });
-              }
-
-              DB.removeWeapon(w);
-              hitSomething = true;
-              break;
-            }
-          }
-
-          if (hitSomething) continue;
-
-          if (DB.boss && DB.boss.phase === 'normal') {
-            const b = DB.boss;
-            if (Math.hypot(w.x - b.x, w.y - b.y) < w.r + b.r + hitRadiusBonus) {
-              const finalDmg = DB.calcWeaponDamage(w.baseDamage * 4.0 * (1 + state.mods.damage), b.x, b.y);
-              b.hp -= finalDmg;
-              b.flashT = 0.15;
-              
-              if (w.type === 'code_slash') {
-                b.slowT = 3.0;
-                b.vulnerable = 3.0;
-                if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: b.x, y: b.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
-                DB.spawnParticles(b.x, b.y, 15, '#00ffcc', 300);
-              }
-
-              state.hitstop = Math.max(state.hitstop, 0.08);
-              state.shake = Math.min(state.shake + 8, 25);
-              DB.spawnParticles(w.x, w.y, 20, '#ff5a7a', 500);
-              DB.sfx.hit();
-              
-              if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: b.x, y: b.y - b.r, vy: -50, life: 1, maxLife: 1, color: '#ffffff' });
-
-              if (w.def.effect === 'earthquake' && DB.triggerQuake) {
-                DB.triggerQuake(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
-                DB.triggerBlackhole(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              } else if (w.def.effect === 'chain' && DB.triggerChain) {
-                DB.triggerChain(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              }
-              
-              DB.removeWeapon(w);
-              
-              if (b.hp <= 0) {
-                DB.triggerQTE(b);
-                b.hp = 0;
-                b.phase = 'paralyzed';
-                state.qte.active = true;
-                state.qte.timer = b.isBig ? 9.0 : 7.0;
-                state.qte.inputIndex = 0;
-                const seqLen = b.isBig ? 8 : 6;
-                let seq = "";
-                for(let k=0; k<seqLen; k++) seq += Math.floor(Math.random() * 10);
-                state.qte.sequence = seq;
-                state.flash = 0.5;
-                state.hitstop = 0.15;
-              }
-              continue;
-            }
-          }
-        }
-
-        // ===== 防守方命中 =====
-        if (state.mode !== 'hacker') {
-          const speed = Math.hypot(w.vx, w.vy);
-          let hit = false;
-          if (DB.boss && DB.boss.phase === 'normal') {
-            const b = DB.boss;
-            const dx = w.x - b.x, dy = w.y - b.y;
-            if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
-              const power = DB.clamp(speed / 700, 0.5, 2.4);
-              
-              // 【修复】调用暴击
-              const hitDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), b.x, b.y);
-              b.hp -= hitDmg;
-              
-              // 【修复】代码特效
-              if (w.type === 'code_slash') {
-                 b.slowT = 3.0; b.vulnerable = 3.0;
-                 if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: b.x, y: b.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
-                 DB.spawnParticles(b.x, b.y, 15, '#00ffcc', 300);
-              }
-
-              state.hitstop = Math.max(state.hitstop, 0.05);
-              state.shake = Math.min(state.shake + 5, 22);
-              DB.spawnParticles(w.x, w.y, 20, '#ffffff', 500);
-              DB.sfx.hit();
-              DB.removeWeapon(w);
-              hit = true;
-
-              if (w.def.effect === 'earthquake' && DB.triggerQuake) {
-                 DB.triggerQuake(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
-                 DB.triggerBlackhole(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              } else if (w.def.effect === 'chain' && DB.triggerChain) {
-                 DB.triggerChain(b.x, b.y, w.baseDamage * (1 + state.mods.damage));
-              }
-
-              if (b.hp <= 0) {
-                b.hp = 0; b.phase = 'paralyzed';
-                state.qte.active = true;
-                state.qte.timer = b.isBig ? 9.0 : 7.0; 
-                state.qte.inputIndex = 0;
-                const seqLen = b.isBig ? 8 : 6; 
-                let seq = "";
-                for(let i=0; i<seqLen; i++) seq += Math.floor(Math.random() * 10);
-                state.qte.sequence = seq;
-                state.flash = 0.5; state.hitstop = 0.15;
-              }
-            }
-          }
-
-          if (hit) continue;
-
-          for (let ei = DB.enemies.length - 1; ei >= 0; ei--) {
-            const e = DB.enemies[ei];
-            if (e.dead) continue;
-            const dx = w.x - e.x, dy = w.y - e.y;
-            if (dx * dx + dy * dy < (w.r + e.r) * (w.r + e.r)) {
-              if (e.type === 'shield') {
-                const isFrontal = (w.vx * e.facing < 0);
-                if (isFrontal) {
-                   DB.spawnParticles(w.x, w.y, 15, '#ffffff', 400);
-                   state.hitstop = Math.max(state.hitstop, 0.06);
-                   state.shake = Math.min(state.shake + 4, 20);
-                   DB.sfx.error(); DB.removeWeapon(w);
-                   break; 
-                }
-              }
-
-              const power = DB.clamp(speed / 700, 0.5, 2.4);
-              
-              // 【修复】调用暴击
-              const finalDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), e.x, e.y);
-              e.hp -= finalDmg;
-              e.flashT = 0.12;
-              
-              // 【修复】代码特效
-              if (w.type === 'code_slash') {
-                 e.slowT = 3.0; e.vulnerable = 3.0;
-                 if (DB.floaters) DB.floaters.push({ text: 'GLITCH!', x: e.x, y: e.y - 40, vy: -50, life: 1, maxLife: 1, color: '#00ffcc', isCrit: true });
-                 DB.spawnParticles(e.x, e.y, 15, '#00ffcc', 300);
-              }
-
-              state.hitstop = Math.max(state.hitstop, 0.045);
-              state.shake   = Math.min(state.shake + 4, 22);
-              DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480);
-              DB.sfx.hit();
-              
-              if (w.def.effect === 'pull') {
-                const pdx = DB.player.x - e.x, pdy = DB.player.y - e.y;
-                const pd = Math.hypot(pdx, pdy) || 1;
-                const pullDist = 180;
-                if (e.type === 'drone') {
-                   e.baseX += (pdx / pd) * pullDist;
-                   e.baseY += (pdy / pd) * pullDist;
-                   e.baseX = DB.clamp(e.baseX, 60, W - 60);
-                   e.baseY = DB.clamp(e.baseY, 60, H - 100);
-                }
-                e.x += (pdx / pd) * pullDist; 
-                e.y += (pdy / pd) * pullDist;
-                for (let k = 0; k < 10; k++) {
-                  const t = k / 10;
-                  DB.particles.push({ x: e.x + (DB.player.x - e.x) * t, y: e.y + (DB.player.y - e.y) * t, vx: (Math.random()-0.5)*100, vy: (Math.random()-0.5)*100, life: 0.4, maxLife: 0.4, size: 4, color: '#5ae8ff', spin: 0, rot: 0 });
-                }
-                state.hitstop = Math.max(state.hitstop, 0.08); 
-                state.shake = 26; state.flash = Math.max(state.flash, 0.15); 
-                DB.sfx.error(); 
-              } else if (w.def.effect === 'earthquake' && DB.triggerQuake) {
-                DB.triggerQuake(e.x, e.y, finalDmg);
-              } else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) {
-                DB.triggerBlackhole(e.x, e.y, finalDmg);
-              } else if (w.def.effect === 'chain' && DB.triggerChain) {
-                DB.triggerChain(e.x, e.y, finalDmg);
-              }
-
-              DB.removeWeapon(w);
-              if (e.hp <= 0) DB.killEnemy(ei);
-              break;
-            }
-          }
-        }
-        
-        // 地面与墙壁碰撞反弹
-        const floorY = CFG.GROUND_Y - w.def.h * 0.32;
-        if (w.y > floorY) {
-          w.y = floorY;
-          if (Math.abs(w.vy) > 90) {
-            w.vy *= -CFG.BOUNCE;
-            w.vx *= 0.82;
-            w.rotV *= 0.7;
-            DB.spawnParticles(w.x, CFG.GROUND_Y, 5, '#7aa8e8', 130);
-            state.shake = Math.min(state.shake + 1.6, 10);
-          } else {
-            w.vy = 0;
-          }
-          w.vx *= Math.exp(-CFG.GROUND_FRICTION * dt);
-          w.rotV *= Math.exp(-5 * dt);
-          if (Math.abs(w.vx) < 9) w.vx = 0;
-          if (Math.abs(w.rotV) < 0.6) w.rotV = 0;
-        }
-
-        if (w.x < w.r)          { w.x = w.r;          w.vx =  Math.abs(w.vx) * CFG.WALL_BOUNCE; }
-        if (w.x > W - w.r)      { w.x = W - w.r;      w.vx = -Math.abs(w.vx) * CFG.WALL_BOUNCE; }
-        if (w.y < CFG.PLAY_TOP) { w.y = CFG.PLAY_TOP; w.vy =  Math.abs(w.vy) * CFG.WALL_BOUNCE; }
-      }
-
-      if (w.corrupted && w.el) {
-        w.el.style.borderColor = '#ff5a7a';
-        w.el.style.color = '#ff5a7a';
-        w.el.style.background = 'linear-gradient(135deg, rgba(100, 20, 30, 0.95), rgba(40, 10, 10, 0.98))';
-        w.el.style.textShadow = '0 0 8px rgba(255, 90, 122, 0.8)';
-        w.el.style.opacity = (Math.sin(state.t * 30) > 0) ? 1 : 0.5;
-        if (w.el.textContent !== '⚠ ERROR') w.el.textContent = '⚠ ERROR';
-      } else if (w.el && !w.corrupted) {
-        w.el.style.opacity = 1; 
-      }
-
-      if (w.el && !w.corrupted) {
-        if (w.age > lifetime - 2) {
-          w.el.style.opacity = (Math.sin(state.t * 26) > 0) ? 1 : 0.25;
-        } else {
-          w.el.style.opacity = 1;
-        }
+        if (w.x < w.r) { w.x = w.r; w.vx = Math.abs(w.vx) * CFG.WALL_BOUNCE; }
+        if (w.x > W - w.r) { w.x = W - w.r; w.vx = -Math.abs(w.vx) * CFG.WALL_BOUNCE; }
+        if (w.y < CFG.PLAY_TOP) { w.y = CFG.PLAY_TOP; w.vy = Math.abs(w.vy) * CFG.WALL_BOUNCE; }
       }
 
       positionWeaponEl(w);
     }
   };
 
-  /* ---------- 预警光柱绘制 ---------- */
   DB.drawSpawnWarnings = function (ctx) {
     for (const w of DB.weapons) {
       if (w.dead || w.warning <= 0) continue;
-
       const k = 1 - w.warning / CFG.SPAWN_WARN;
       let alpha = 0.4 + k * 0.6;
-      if (w.warning < 0.1) {
-        alpha = (Math.sin(state.t * 50) > 0) ? 1 : 0.3;
-      }
+      if (w.warning < 0.1) alpha = (Math.sin(state.t * 50) > 0) ? 1 : 0.3;
+      ctx.save(); ctx.globalAlpha = alpha;
+      const grad = ctx.createLinearGradient(0, w.y - 200, 0, w.y + 20);
+      grad.addColorStop(0, 'rgba(90, 240, 255, 0)'); grad.addColorStop(0.8, 'rgba(90, 240, 255, 0.4)'); grad.addColorStop(1, 'rgba(140, 250, 255, 1.0)');
+      ctx.fillStyle = grad; ctx.fillRect(w.x - 6, w.y - 200, 12, 220);
+      ctx.strokeStyle = 'rgba(140, 250, 255, 0.8)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(w.x, w.y, 40, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  };
 
+  DB.drawDeployedWeapons = function (ctx) {
+    for (const w of DB.weapons) {
+      if (w.dead || !w.deployed) continue;
+      
+      const lifeRatio = w.deployT / w.deployMaxT;
+      const fadeOut = Math.min(1, lifeRatio * 3);
+      const fadeIn = Math.min(1, (1 - lifeRatio) * 10);
+      const alpha = fadeOut * fadeIn;
+      
       ctx.save();
+      ctx.translate(w.x, w.y);
       ctx.globalAlpha = alpha;
 
-      const grad = ctx.createLinearGradient(0, w.y - 200, 0, w.y + 20);
-      grad.addColorStop(0, 'rgba(90, 240, 255, 0)');
-      grad.addColorStop(0.8, 'rgba(90, 240, 255, 0.4)');
-      grad.addColorStop(1, 'rgba(140, 250, 255, 1.0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(w.x - 6, w.y - 200, 12, 220);
+      if (w.type === 'gravity') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 15 + w.seed);
+        ctx.shadowColor = '#ffcc00';
+        ctx.shadowBlur = 20;
+        
+        ctx.strokeStyle = `rgba(255, 204, 0, ${0.4 + pulse * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 300, 0, Math.PI * 2);
+        ctx.stroke();
 
-      ctx.strokeStyle = 'rgba(140, 250, 255, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(w.x, w.y, 40, 0, Math.PI * 2); ctx.stroke();
+        for (let i = 0; i < 3; i++) {
+          const ringT = (state.t * 1.5 + i / 3) % 1;
+          const r = 300 * (1 - ringT);
+          ctx.strokeStyle = `rgba(255, 204, 0, ${0.6 * ringT})`;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
 
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(w.x, w.y, 40 - k * 30, 0, Math.PI * 2); ctx.stroke();
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 40);
+        g.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+        g.addColorStop(0.5, 'rgba(255, 204, 0, 0.4)');
+        g.addColorStop(1, 'rgba(255, 204, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, 40, 0, Math.PI * 2);
+        ctx.fill();
 
-      ctx.strokeStyle = 'rgba(140, 250, 255, 0.9)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(w.x - 10, w.y); ctx.lineTo(w.x + 10, w.y);
-      ctx.moveTo(w.x, w.y - 10); ctx.lineTo(w.x, w.y + 10);
-      ctx.stroke();
+      } else if (w.type === 'blackhole') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 8 + w.seed);
+        ctx.shadowColor = '#c08bff';
+        ctx.shadowBlur = 30;
+
+        ctx.strokeStyle = `rgba(192, 139, 255, ${0.5 + pulse * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 60 + pulse * 10, 20 + pulse * 5, state.t * 2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(0, 0, 25, 0, Math.PI * 2);
+        ctx.fill();
+        
+        for (let i = 0; i < 6; i++) {
+          const angle = state.t * 3 + i * (Math.PI * 2 / 6);
+          const dist = 100 + Math.sin(state.t * 5 + i) * 20;
+          const px = Math.cos(angle) * dist;
+          const py = Math.sin(angle) * dist;
+          
+          ctx.strokeStyle = `rgba(192, 139, 255, ${0.3 + pulse * 0.3})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.quadraticCurveTo(px * 0.5, py * 0.5, Math.cos(angle + 0.5) * 15, Math.sin(angle + 0.5) * 15);
+          ctx.stroke();
+        }
+
+      } else if (w.type === 'chain') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 20 + w.seed);
+        ctx.shadowColor = '#5ae8ff';
+        ctx.shadowBlur = 20;
+
+        ctx.strokeStyle = `rgba(90, 232, 255, ${0.6 + pulse * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + state.t;
+          const px = Math.cos(a) * 30;
+          const py = Math.sin(a) * 30;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (Math.random() < 0.4) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          const numArcs = 2 + Math.floor(Math.random() * 2);
+          for (let k = 0; k < numArcs; k++) {
+            const angle = Math.random() * Math.PI * 2;
+            const len = 40 + Math.random() * 60;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            let cx = 0, cy = 0;
+            const steps = 4;
+            for (let s = 1; s <= steps; s++) {
+              const t = s / steps;
+              const targetX = Math.cos(angle) * len * t;
+              const targetY = Math.sin(angle) * len * t;
+              cx = targetX + (Math.random() - 0.5) * 20;
+              cy = targetY + (Math.random() - 0.5) * 20;
+              ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+          }
+        }
+      }
 
       ctx.restore();
     }
   };
 
-  /* ---------- 瞄准线与皮筋绘制 ---------- */
   DB.drawGrabBeam = function (ctx) {
     const w = DB.heldWeapon;
     if (!w) return;
-
     const SL = CFG.SLINGSHOT;
-    const ax = w.anchorX;
-    const ay = w.anchorY;
-    const bx = w.x;
-    const by = w.y;
 
     if (state.mode === 'hacker') {
-      const p = DB.player;
-      const mouse = DB.mouse;
-      const dx = mouse.x - p.x;
-      const dy = mouse.y - p.y;
+      const p = DB.player, mouse = DB.mouse;
+      const dx = mouse.x - p.x, dy = mouse.y - p.y;
       const dist = Math.hypot(dx, dy);
-      
-      if (dist > 30) {
-        const dirX = dx / dist;
-        const dirY = dy / dist;
-        const len = 2000;
+      if (dist <= 30) return;
 
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 204, 0, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([8, 8]);
-        ctx.lineDashOffset = -state.t * 60;
-        ctx.shadowColor = '#ffcc00';
-        ctx.shadowBlur = 10;
-        
+      const dirX = dx / dist, dirY = dy / dist;
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 255, 204, 0.85)';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(mouse.x, mouse.y);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 255, 204, 0.35)';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -state.t * 80;
+      const extLen = 2400;
+      ctx.beginPath();
+      ctx.moveTo(mouse.x, mouse.y);
+      ctx.lineTo(mouse.x + dirX * extLen, mouse.y + dirY * extLen);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 15;
+      for (let i = 0; i < 3; i++) {
+        const t = ((state.t * 1.5 + i / 3) % 1);
+        const px = p.x + (mouse.x - p.x) * t;
+        const py = p.y + (mouse.y - p.y) * t;
         ctx.beginPath();
-        ctx.moveTo(p.x + dirX * 40, p.y + dirY * 40);
-        ctx.lineTo(p.x + dirX * len, p.y + dirY * len);
-        ctx.stroke();
-        ctx.restore();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 15;
+      ctx.lineWidth = 2;
+      const cx = mouse.x, cy = mouse.y;
+      const arm = 14;
+      ctx.beginPath();
+      ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - 4, cy);
+      ctx.moveTo(cx + 4, cy);   ctx.lineTo(cx + arm, cy);
+      ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - 4);
+      ctx.moveTo(cx, cy + 4);   ctx.lineTo(cx, cy + arm);
+      ctx.stroke();
+
+      const pulse = 0.5 + 0.5 * Math.sin(state.t * 10);
+      ctx.strokeStyle = `rgba(0, 255, 204, ${0.5 + pulse * 0.5})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22 + pulse * 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
       return;
     }
 
+    const ax = w.anchorX, ay = w.anchorY, bx = w.x, by = w.y;
     const dx = bx - ax, dy = by - ay;
     const pullDist = Math.hypot(dx, dy);
     if (pullDist < 4) return;
-
     const t = DB.clamp(pullDist / SL.MAX_PULL, 0, 1);
-
-    let r, g, b;
-    if (t < 0.5) {
-      const k = t / 0.5;
-      r = 90 + (255 - 90) * k; g = 240 + (255 - 240) * k; b = 255;
-    } else {
-      const k = (t - 0.5) / 0.5;
-      r = 255; g = 255 + (120 - 255) * k; b = 255 + (60 - 255) * k;
-    }
-
+    let r = 90, g = 240, b = 255;
+    if (t >= 0.5) { const k = (t - 0.5) / 0.5; r = 255; g = 255 - 135 * k; b = 255 - 195 * k; }
     const color = `rgb(${r|0}, ${g|0}, ${b|0})`;
-    const glow  = `rgba(${r|0}, ${g|0}, ${b|0}, 0.7)`;
     const nx = -dy / pullDist, ny = dx / pullDist;
     const sag = Math.min(26, pullDist * 0.18) * (0.6 + Math.sin(state.t * 18) * 0.4);
-
     for (let side = -1; side <= 1; side += 2) {
-      const midX = (ax + bx) / 2 + nx * sag * side;
-      const midY = (ay + by) / 2 + ny * sag * side;
-
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.shadowColor = glow;
-      ctx.shadowBlur  = 10 + t * 18;
-      ctx.lineWidth   = 2.2 + (1 - t) * 1.6;
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(midX, midY, bx, by); ctx.stroke();
-      ctx.restore();
+      const midX = (ax + bx) / 2 + nx * sag * side, midY = (ay + by) / 2 + ny * sag * side;
+      ctx.save(); ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 10 + t * 18;
+      ctx.lineWidth = 2.2 + (1 - t) * 1.6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(midX, midY, bx, by); ctx.stroke(); ctx.restore();
     }
+  };
 
-    if (t > 0.7) {
-      const sparks = Math.floor((t - 0.7) / 0.3 * 6);
-      for (let i = 0; i < sparks; i++) {
-        const p  = Math.random();
-        const sx = ax + dx * p + nx * (Math.random() - 0.5) * 18;
-        const sy = ay + dy * p + ny * (Math.random() - 0.5) * 18;
-        ctx.save(); ctx.globalAlpha = 0.8; ctx.fillStyle = '#ffffff'; ctx.fillRect(sx - 1, sy - 1, 2, 2); ctx.restore();
+  DB.triggerLink = function (cx, cy, dmg) {
+    state.shake = Math.max(state.shake, 15);
+    DB.sfx.error();
+
+    for (const e of DB.enemies) {
+      const dx = cx - e.x, dy = cy - e.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      if (d < 300) {
+        e.x += (dx / d) * 300 * (1 - d / 300);
+        e.y += (dy / d) * 300 * (1 - d / 300);
+        e.hp -= dmg * 1.5;
+        e.flashT = 0.15;
+        if (e.hp <= 0 && DB.killEnemy) DB.killEnemy(DB.enemies.indexOf(e));
       }
     }
-
-    if (pullDist > SL.MIN_PULL * 0.6) {
-      const dirX = -dx / pullDist, dirY = -dy / pullDist;
-      const len  = 60 + t * 120;
-      const ex = bx + dirX * len, ey = by + dirY * len;
-
-      ctx.save();
-      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, ${b|0}, ${0.35 + t * 0.5})`;
-      ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]); ctx.lineDashOffset = -state.t * 40;
-      ctx.beginPath(); ctx.moveTo(bx + dirX * 22, by + dirY * 22); ctx.lineTo(ex, ey); ctx.stroke();
-      ctx.restore();
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = Math.random() * 300;
+      DB.particles.push({
+        x: cx + Math.cos(a) * dist, y: cy + Math.sin(a) * dist,
+        vx: -Math.cos(a) * 500, vy: -Math.sin(a) * 500,
+        life: 0.5, maxLife: 0.5, size: 5, color: '#5ae8ff', spin: 0, rot: a
+      });
     }
   };
 

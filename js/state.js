@@ -13,13 +13,20 @@
     
     camera: { x: 0, y: 0 },
 
-    // ===== Boss 狂暴化特效计时器 =====
     bossEnrageFlash: 0,   
     bossEnrageTextT: 0,   
     
-    // ===== 阵营专属技能状态 =====
-    skillCd: 0,       // 技能冷却
-    skillActiveT: 0   // 技能持续时间
+    skillCd: 0,       
+    skillActiveT: 0,
+
+    // ===== 【新增】新手教程状态 =====
+    tutorial: {
+      active: false,
+      step: 0,        // 当前步骤
+      startX: 0, startY: 0, // 记录玩家初始位置用于检测移动
+      pullDist: 0,    // 记录拉弓距离
+      hitDummy: false // 记录是否命中木桩
+    }
   };
 
   DB.player = {

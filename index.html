@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>System Brawler — 系统暴徒原型</title>
+<title>System Brawler — 系统暴徒</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -44,7 +44,7 @@
       <div class="title-sub">系统暴徒 · 双阵营原型</div>
 
       <!-- 阵营选择 -->
-      <div class="mode-select" style="margin-bottom: 30px;">
+      <div class="mode-select" style="margin-bottom: 10px;">
         <div class="mode-card active" id="mode-defender" data-mode="defender">
           <div class="mode-icon">🛡️</div>
           <div class="mode-name">安全卫士</div>
@@ -57,8 +57,14 @@
         </div>
       </div>
 
+      <!-- 新手教程入口 -->
+      <div style="display: flex; gap: 20px; margin-bottom: 30px; pointer-events: auto;">
+        <div class="tutorial-btn" id="btn-tut-def" style="color:#5ae8ff; border-color:rgba(90,240,255,0.4);">▶ 卫士新手教程</div>
+        <div class="tutorial-btn" id="btn-tut-hack" style="color:#ff5a7a; border-color:rgba(255,90,122,0.4);">▶ 黑客新手教程</div>
+      </div>
+
       <!-- 功能按钮区 -->
-      <div style="display: flex; gap: 16px; margin-bottom: 50px; pointer-events: auto;">
+      <div style="display: flex; gap: 16px; margin-bottom: 40px; pointer-events: auto;">
         <button class="title-action-btn" id="btn-open-rules">📖 玩法说明</button>
         <button class="title-action-btn" id="btn-open-upgrades">⚙️ 系统升级</button>
       </div>
@@ -131,7 +137,6 @@
       <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('8')">8</button>
       <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('9')">9</button>
       <button class="mob-btn qte-btn" onclick="window.DB.handleMobileKey('0')">0</button>
-
     </div>
   </div>
 

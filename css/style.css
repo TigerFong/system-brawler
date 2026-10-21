@@ -637,3 +637,24 @@ canvas.layer {
   background: rgba(0,0,0,0.8); padding: 20px; border-radius: 12px; border: 2px solid #ff5a7a;
 }
 .qte-btn { border-color: #ff5a7a; box-shadow: 0 0 10px rgba(255,90,122,0.5); }
+/* =========================================
+   新手教程专用 UI 样式
+   ========================================= */
+.tutorial-btn {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  pointer-events: auto;
+}
+.tutorial-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+#btn-tut-def:hover { box-shadow: 0 0 15px rgba(90, 240, 255, 0.4); }
+#btn-tut-hack:hover { box-shadow: 0 0 15px rgba(255, 90, 122, 0.4); }

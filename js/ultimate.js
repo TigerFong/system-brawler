@@ -12,7 +12,7 @@
     state.energy = 0;
     const p = DB.player;
     const isHacker = state.mode === 'hacker';
-    
+
     const upData = DB.upgrades || { damage: 0 };
     const totalDmgMult = 1 + (upData.damage * 0.1) + state.mods.damage;
 
@@ -24,71 +24,82 @@
     if (!isHacker) {
       // ================= 防守方大招 =================
       if (key === '1') {
-        const dmg = 60 * totalDmgMult; 
+        const dmg = 60 * totalDmgMult;
         for (const t of DB.enemies) t.hp -= dmg;
         if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= dmg; DB.boss.flashT = 0.2; }
         for (let i = 0; i < 120; i++) DB.particles.push({ x: Math.random() * W, y: -20, vx: 0, vy: 800 + Math.random() * 600, life: 1.0, maxLife: 1.0, size: 4 + Math.random() * 6, color: '#5ae8ff', spin: 0, rot: 0 });
-      } 
+      }
       else if (key === '2') {
-        DB.enemyBullets.length = 0; 
-        for (const e of DB.enemies) e.frozen = 3.0; 
+        DB.enemyBullets.length = 0;
+        for (const e of DB.enemies) e.frozen = 3.0;
         if (DB.boss) DB.boss.frozen = 3.0;
-      } 
+      }
       else if (key === '3') {
         state.hp = Math.min(state.hpMax, state.hp + state.hpMax * 0.5);
-      } 
+      }
       else if (key === '4') {
-        // 核心熔毁：献祭所有武器
-        const sacrifice = DB.weapons.filter(w => !w.dead && w.warning <= 0).length;
+        const sacrifice = DB.weapons.filter(w => !w.dead && w.warning <= 0 && !w.deployed).length;
         for (const w of DB.weapons.slice()) { DB.removeWeapon(w); }
         DB.heldWeapon = null;
-        
-        const dmg = (30 + sacrifice * 40) * totalDmgMult; 
+
+        const dmg = (30 + sacrifice * 40) * totalDmgMult;
         for (const t of DB.enemies) t.hp -= dmg;
         if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= dmg; DB.boss.flashT = 0.3; }
       }
-    } 
+    }
     else {
       // ================= 黑客方大招 =================
       if (key === '1') {
-        // 逻辑炸弹
         const dmg = 50 * totalDmgMult;
-        for (const t of DB.enemies) { 
-          t.hp -= dmg; 
-          t.vulnerable = 6.0; 
+        for (const t of DB.enemies) {
+          t.hp -= dmg;
+          t.vulnerable = 6.0;
           DB.spawnParticles(t.x, t.y, 10, '#ff5a7a', 300);
         }
         if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= dmg; DB.boss.flashT = 0.2; }
-        
+
         for (let i = 0; i < 100; i++) {
           DB.particles.push({ x: Math.random() * W, y: Math.random() * H, vx: 0, vy: 0, life: 1.5, maxLife: 1.5, size: 6, color: '#ff5a7a', spin: 0, rot: 0 });
         }
-      } 
+      }
       else if (key === '2') {
-        // 冻结协议
-        DB.enemyBullets.length = 0; 
-        for (const e of DB.enemies) e.slowT = 4.0; // 稍微削弱了减速时间
-        
+        DB.enemyBullets.length = 0;
+        for (const e of DB.enemies) e.slowT = 4.0;
+
         for (let i = 0; i < 100; i++) {
           DB.particles.push({ x: Math.random() * W, y: Math.random() * H, vx: 0, vy: 0, life: 1.5, maxLife: 1.5, size: 5, color: '#5ae8ff', spin: 0, rot: 0 });
         }
-      } 
+      }
       else if (key === '3') {
-        // 紧急重启
         state.hp = Math.min(state.hpMax, state.hp + state.hpMax * 0.4);
         for (let i = 0; i < 3; i++) {
           const w = DB.spawnWeapon('light_dart');
           if (w) w.warning = 0.001;
         }
         DB.sfx.chip();
-      } 
+      }
       else if (key === '4') {
-        // 4: 万剑归宗 -> 所有场上武器自动飞向最近的敌人
-        DB.heldWeapon = null; 
+        // 万剑归宗：未部署的武器变成追踪导弹；已部署的阵地直接原地过载核爆！
+        DB.heldWeapon = null;
         for (const w of DB.weapons.slice()) {
           if (w.dead) continue;
-          w.held = false; 
           
+          if (w.deployed) {
+            // 【修复】部署阵地直接引爆，造成巨额伤害
+            const dmg = w.baseDamage * 8 * totalDmgMult;
+            if (w.type === 'gravity') DB.triggerQuake(w.x, w.y, dmg);
+            if (w.type === 'blackhole') { DB.triggerBlackhole(w.x, w.y, dmg); DB.triggerBlackholeBurst(w.x, w.y, dmg); }
+            if (w.type === 'chain') DB.triggerChain(w.x, w.y, dmg);
+            
+            DB.spawnParticles(w.x, w.y, 50, '#ffcc00', 800);
+            DB.spawnParticles(w.x, w.y, 30, '#ffffff', 1000);
+            
+            DB.removeWeapon(w);
+            continue; // 跳过追踪
+          }
+
+          w.held = false;
+
           let target = null; let minDist = Infinity;
           for (const e of DB.enemies) {
             const d = Math.hypot(w.x - e.x, w.y - e.y);
@@ -98,9 +109,11 @@
 
           if (target) {
             w.thrown = true;
-            w.homing = true;         // <--- 开启追踪
-            w.homingTarget = target; // <--- 记录目标
+            w.homing = true;
+            w.homingTarget = target;
             w.age = 0;
+            w.vx = 0; 
+            w.vy = 0;
           }
         }
       }

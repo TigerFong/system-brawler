@@ -7,11 +7,24 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    hpExponent: 1.50, dmgExponent: 0.75,
-    bossDmgPerWave: 0.30, bossSpeedPerWave: 0.15,
-    droneCountDiv: 1.5, wormCountDiv: 1.5, shieldCountDiv: 1.5,
-    turretCountDiv: 1.5, chargerCountDiv: 1.5, splitterCountDiv: 1.5,
-    bossBulletDivDefault: 1.5, bossBulletDivFirewall: 2, bossSummonDiv: 2
+    // 【极限指数】1.80。第 10 波 198 倍，第 15 波 2900 倍，第 20 波 4.2 万倍！
+    hpExponent:           1.80,   
+    // 伤害增长拉高，后期只要被碰一下直接大残
+    dmgExponent:          1.25,   
+    
+    bossDmgPerWave:       0.30,   
+    bossSpeedPerWave:     0.15,   
+    
+    droneCountDiv:        1.5,    
+    wormCountDiv:         1.5,
+    shieldCountDiv:       1.5,
+    turretCountDiv:       1.5,
+    chargerCountDiv:      1.5,
+    splitterCountDiv:     1.5,
+    
+    bossBulletDivDefault: 1.5,     
+    bossBulletDivFirewall: 2,     
+    bossSummonDiv:        2       
   };
   const G = DB.GROWTH;
 
@@ -27,11 +40,17 @@
   const BULLET_LIFE   = 6;
   const CHIP_LIFETIME = 14;
 
+  // ===== 易伤判定（数据光刃施加 vulnerable 后，后续伤害 ×1.5） =====
+  DB.applyVulnerable = function (target, dmg) {
+    if (target && target.vulnerable > 0) return dmg * 1.5;
+    return dmg;
+  };
+
   // ===== 教程木桩生成 =====
   DB.spawnTutorialDummy = function (x, y) {
     DB.enemies.push({
       type: 'dummy', x, y,
-      hp: 99999, maxHp: 99999,
+      hp: 100, maxHp: 100,
       r: 30,
       dmg: 0,
       flashT: 0, frozen: 0, isNew: true
@@ -273,13 +292,13 @@
 
     for (const e of DB.enemies) {
       if (Math.hypot(e.x - cx, e.y - cy) < reflectRadius) {
-        e.hp -= reflectDmg; e.flashT = 0.15; hitCount++;
+        e.hp -= DB.applyVulnerable(e, reflectDmg); e.flashT = 0.15; hitCount++;
         DB.spawnParticles(e.x, e.y, 8, '#ffffff', 200);
       }
     }
     if (DB.boss && DB.boss.phase === 'normal') {
       if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < reflectRadius) {
-        DB.boss.hp -= reflectDmg; DB.boss.flashT = 0.15; hitCount++;
+        DB.boss.hp -= DB.applyVulnerable(DB.boss, reflectDmg); DB.boss.flashT = 0.15; hitCount++;
       }
     }
     if (hitCount > 0 && DB.floaters) {
@@ -350,7 +369,10 @@
 
     if (!best) return null;
 
-    const baseDmg = w.baseDamage * (1 + state.mods.damage);
+    // 先结算易伤，再计算暴击；code_slash 自身的易伤是"命中之后才施加"，不会被自己吃到
+    const targetRef = best.boss || best.enemy;
+    let baseDmg = w.baseDamage * (1 + state.mods.damage);
+    baseDmg = DB.applyVulnerable(targetRef, baseDmg);
     const finalDmg = DB.calcWeaponDamage(baseDmg, best.x, best.y);
 
     state.hitstop = Math.max(state.hitstop, 0.06);
@@ -361,30 +383,42 @@
       DB.particles.push({ x: ox + (best.x - ox) * t, y: oy + (best.y - oy) * t, vx: (Math.random() - 0.5) * 100, vy: (Math.random() - 0.5) * 100, life: 0.28, maxLife: 0.28, size: 5, color: '#00ffcc', spin: 0, rot: 0 });
     }
     DB.spawnParticles(best.x, best.y, 22, '#00ffcc', 520);
+    if (DB.floaters) {
+      DB.floaters.push({
+        text: `-${Math.round(finalDmg)}`,
+        x: best.x + (Math.random() - 0.5) * 30,
+        y: best.y - 20,
+        vy: -50, life: 0.7, maxLife: 0.7,
+        color: '#ff5a7a'
+      });
+    }
     DB.sfx.hit();
 
-    if (w.type === 'code_slash') {
-      if (best.enemy) { best.enemy.slowT = 3.0; best.enemy.vulnerable = 3.0; }
-      if (best.boss)  { best.boss.slowT = 3.0;  best.boss.vulnerable = 3.0; }
-    }
-
     if (best.boss) {
-      const b = best.boss;
-      b.hp -= finalDmg;
-      b.flashT = 0.15;
-      if (b.hp <= 0) DB.triggerQTE(b);
+      best.boss.hp -= finalDmg; best.boss.flashT = 0.15;
     } else if (best.enemy) {
-      const e = best.enemy;
-      e.hp -= finalDmg;
-      e.flashT = 0.15;
-      
-      if (e.type === 'dummy') {
+      if (best.enemy.type === 'dummy') {
         state.tutorial.hitDummy = true;
-      } else if (e.hp <= 0) {
-        const idx = DB.enemies.indexOf(e);
-        if (idx !== -1) killEnemy(idx);
+        best.enemy.flashT = 0.15;
+        best.enemy.hp -= finalDmg;
+        if (best.enemy.hp <= 0) {
+          const idx = DB.enemies.indexOf(best.enemy);
+          if (idx !== -1) killEnemy(idx);
+        }
+      } else {
+        best.enemy.hp -= finalDmg; best.enemy.flashT = 0.15;
       }
     }
+
+    // 黑客专属：命中后差异化效果
+    DB.resolveHackerHit(w, best, finalDmg);
+
+    // 统一处理死亡
+    if (best.enemy && best.enemy.type !== 'dummy' && best.enemy.hp <= 0) {
+      const idx = DB.enemies.indexOf(best.enemy);
+      if (idx !== -1) killEnemy(idx);
+    }
+    if (best.boss && best.boss.hp <= 0) DB.triggerQTE(best.boss);
 
     return { x: best.x, y: best.y, enemy: best.enemy || null, boss: best.boss || null, finalDmg: finalDmg };
   };
@@ -432,7 +466,7 @@
         if (other.dead || other === e) continue;
         const dx = other.x - e.x, dy = other.y - e.y;
         if (dx * dx + dy * dy < blastRadius * blastRadius) {
-          other.hp -= blastDmg; other.flashT = 0.15; other.virus = true; hitCount++;
+          other.hp -= DB.applyVulnerable(other, blastDmg); other.flashT = 0.15; other.virus = true; hitCount++;
         }
       }
       DB.spawnParticles(e.x, e.y, 30, '#ffcc00', 600);
@@ -456,17 +490,6 @@
   }
 
   DB.killEnemy = function(index) { killEnemy(index); };
-  
-  DB.damageEnemy = function (e, index, dmg, isEarthquake) {
-    if (!e || e.dead) return;
-    if (e.type === 'dummy') { state.tutorial.hitDummy = true; e.flashT = 0.15; return; }
-    let finalDmg = dmg; if (isNaN(finalDmg)) finalDmg = 10; if (e.vulnerable > 0) finalDmg *= 1.5; if (isNaN(e.hp)) e.hp = 10;
-    e.hp -= finalDmg; e.flashT = 0.15;
-    state.hitstop = Math.max(state.hitstop, 0.08); state.shake = Math.min(state.shake + 8, 25);
-    DB.spawnParticles(e.x, e.y, 20, '#ff5a7a', 500); DB.sfx.hit();
-    if (isEarthquake && DB.triggerQuake) DB.triggerQuake(e.x, e.y, finalDmg); 
-    if (e.hp <= 0) { const idx = DB.enemies.indexOf(e); if (idx !== -1) killEnemy(idx); }
-  };
 
   DB.updateEnemies = function (dt) {
     const p = DB.player;
@@ -615,6 +638,7 @@
       if (e.flashT > 0) e.flashT -= dt;
       if (e.vulnerable > 0) e.vulnerable -= dt;
       if (e.slowT > 0) e.slowT -= dt;
+      if (e.silenced > 0) e.silenced -= dt;
       if (e.isNew) { e.newT = (e.newT || 0) + dt; if (e.newT > 0.4) e.isNew = false; }
       if (e.frozen > 0) { e.frozen -= dt; continue; }
 
@@ -628,7 +652,8 @@
         e.x = e.baseX + Math.sin(state.t * 0.8 + e.seed) * 40;
         e.y = e.baseY + Math.sin(state.t * 1.3 + e.seed * 2) * 18;
         e.fireCd -= dt;
-        if (e.fireCd <= 0) {
+        if (e.silenced > 0) { e.fireCd = Math.max(e.fireCd, 0.3); }
+        else if (e.fireCd <= 0) {
           e.fireCd = FIRE_INTERVAL + Math.random() * 0.6;
           const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy) || 1;
           const bulletColor = state.mode === 'hacker' ? '#5ee6a8' : '#ff5a7a';
@@ -668,7 +693,8 @@
         const dx = p.x - e.x, dy = p.y - e.y;
         e.angle = Math.atan2(dy, dx);
         e.fireCd -= dt;
-        if (e.fireCd <= 0) {
+        if (e.silenced > 0) { e.fireCd = Math.max(e.fireCd, 0.3); }
+        else if (e.fireCd <= 0) {
           e.fireCd = 1.3 / ((e.slowT > 0) ? 0.4 : 1.0) + 1.0;
           const speed = 320;
           const bulletColor = state.mode === 'hacker' ? '#5ee6a8' : '#ffaa00';
@@ -762,7 +788,9 @@
         const dx = w.x - b.x, dy = w.y - b.y;
         if (dx * dx + dy * dy < (w.r + b.r) * (w.r + b.r)) {
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          const hitDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), b.x, b.y);
+          let dmgBase = w.baseDamage * power * (1 + state.mods.damage);
+          dmgBase = DB.applyVulnerable(b, dmgBase);
+          const hitDmg = DB.calcWeaponDamage(dmgBase, b.x, b.y);
           b.hp -= hitDmg;
           state.hitstop = Math.max(state.hitstop, 0.05); DB.sfx.hit(); DB.removeWeapon(w);
           hit = true;
@@ -777,19 +805,21 @@
         const dx = w.x - e.x, dy = w.y - e.y;
         if (dx * dx + dy * dy < (w.r + e.r) * (w.r + e.r)) {
           const power = DB.clamp(speed / 700, 0.5, 2.4);
-          const finalDmg = DB.calcWeaponDamage(w.baseDamage * power * (1 + state.mods.damage), e.x, e.y);
-          
+          let dmgBase = w.baseDamage * power * (1 + state.mods.damage);
+          dmgBase = DB.applyVulnerable(e, dmgBase);
+          const finalDmg = DB.calcWeaponDamage(dmgBase, e.x, e.y);
+
           if (e.type === 'dummy') {
             state.tutorial.hitDummy = true;
             e.flashT = 0.15;
-          } else {
-            e.hp -= finalDmg; e.flashT = 0.12;
+            e.hp -= finalDmg;
             if (e.hp <= 0) killEnemy(ei);
+            DB.removeWeapon(w);
+            break;
           }
-          
-          DB.spawnParticles(w.x, w.y, 14, '#ffffff', 480); DB.sfx.hit();
-          DB.removeWeapon(w);
-          break;
+
+          const consumed = DB.resolveDefenderHit(w, e, ei, finalDmg);
+          if (consumed) { DB.removeWeapon(w); break; }
         }
       }
     }
@@ -1047,6 +1077,100 @@
       ctx.fillStyle = '#ffffff';
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.6, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
+    }
+  };
+
+  DB.resolveDefenderHit = function (w, e, ei, finalDmg) {
+    // 返回 true = 消耗武器；false = 武器继续飞行（穿透/回旋镖）
+    switch (w.type) {
+      case 'light_dart': {
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        DB.spawnParticles(e.x, e.y, 10, '#5ae8ff', 280);
+        w.pierceCount = (w.pierceCount || 0) + 1;
+        return w.pierceCount >= 3;
+      }
+      case 'stun_chip': {
+        e.hp -= finalDmg; e.flashT = 0.15;
+        e.frozen = Math.max(e.frozen || 0, 1.5);
+        e.silenced = Math.max(e.silenced || 0, 1.5);
+        DB.spawnParticles(e.x, e.y, 18, '#5ae8ff', 320);
+        DB.sfx.error();
+        if (e.hp <= 0) DB.killEnemy(ei);
+        return true;
+      }
+      case 'fire_shield': {
+        DB.spawnZone({ kind: 'firewall', x: w.x, y: w.y, w: 200, h: 70, life: 3, dmg: 7, tickInterval: 0.4, color: '#ff7a3a' });
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        DB.spawnParticles(w.x, w.y, 20, '#ff7a3a', 300);
+        return true;
+      }
+      case 'link': {
+        const hitX = e.x, hitY = e.y;
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        for (const other of DB.enemies) {
+          if (other === e || other.dead) continue;
+          const dx = hitX - other.x, dy = hitY - other.y;
+          const d = Math.max(1, Math.hypot(dx, dy));
+          if (d < 250) {
+            other.x += (dx / d) * 160;
+            other.y += (dy / d) * 160;
+            DB.spawnParticles(other.x, other.y, 6, '#5ae8ff', 200);
+          }
+        }
+        DB.spawnParticles(hitX, hitY, 20, '#5ae8ff', 360);
+        DB.sfx.grab();
+        return true;
+      }
+      case 'chain': {
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        DB.triggerChain(e.x, e.y, finalDmg * 0.7);
+        DB.sfx.hit();
+        return true;
+      }
+      case 'code_slash': {
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        DB.spawnParticles(e.x, e.y, 12, '#00ffcc', 260);
+        DB.sfx.hit();
+        
+        // 每次命中，武器自身的伤害衰减 40%，防止回程再次打出满额爆炸伤害
+        w.baseDamage *= 0.6; 
+        
+        return !w.boomerang;  // 回旋镖不消耗
+      }
+      default: {
+        e.hp -= finalDmg; e.flashT = 0.15;
+        if (e.hp <= 0) DB.killEnemy(ei);
+        return true;
+      }
+    }
+  };
+
+  DB.resolveHackerHit = function (w, best, dmg) {
+    const e = best.enemy, b = best.boss;
+    if (!e && !b) return;
+    switch (w.type) {
+      case 'light_dart':
+      case 'chain':
+        if (e && e.type !== 'dummy') e.virus = true;
+        if (b) b.virus = true;
+        break;
+      case 'stun_chip':
+        if (e && e.type !== 'dummy') e.virus = true;
+        if (b) b.virus = true;
+        break;
+      case 'blackhole':
+        if (e && e.type !== 'dummy') e.silenced = Math.max(e.silenced || 0, 2);
+        if (b) b.silenced = Math.max(b.silenced || 0, 2);
+        break;
+      case 'gravity':
+        if (e && e.type !== 'dummy') e.vulnerable = Math.max(e.vulnerable || 0, 3);
+        if (b) b.vulnerable = Math.max(b.vulnerable || 0, 3);
+        break;
     }
   };
 

@@ -59,7 +59,7 @@
 
     // 【修改】让代码武器也能吃满波次加成
     const waveScale = Math.pow(1.35, state.wave - 1); // 1.35 略低于怪物膨胀，防止秒杀一切
-    const dynamicDmg = (20 + textContent.length * 3.5) * waveScale;
+    const dynamicDmg = (20 + textContent.length * 1.5) * waveScale;
     const w = DB.spawnWeapon('code_slash', textContent, dynamicDmg);
     
     if (w) {

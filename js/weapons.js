@@ -197,91 +197,133 @@
     if (w.el) w.el.classList.remove('held');
     DB.heldWeapon = null;
 
-    // ===== 【修复】黑客方：远程投送部署武器 =====
+    // ===== 黑客方：远程投送部署武器 =====
     if (state.mode === 'hacker') {
       const p = DB.player;
       const mouse = DB.mouse;
       const dx = mouse.x - p.x; const dy = mouse.y - p.y;
       const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const range = CFG.VIEW_W * 2;
 
-      if (dist >= 30) {
-        const dirX = dx / dist, dirY = dy / dist;
-        const range = CFG.VIEW_W * 2;
+      if (dist < 30) return;
 
-        // 执行射线检测
-        const hit = DB.hitscanHit(p.x, p.y, p.x + dirX * range, p.y + dirY * range, w);
-
-        if (hit) {
-          // 【命中敌人】：在敌人身上触发效果，并原地生成阵地
-          if (w.def.effect === 'pull' && DB.triggerLink) DB.triggerLink(hit.x, hit.y, hit.finalDmg);
-          else if (w.def.effect === 'earthquake' && DB.triggerQuake) DB.triggerQuake(hit.x, hit.y, hit.finalDmg);
-          else if (w.def.effect === 'blackhole' && DB.triggerBlackhole) DB.triggerBlackhole(hit.x, hit.y, hit.finalDmg);
-          else if (w.def.effect === 'chain' && DB.triggerChain) DB.triggerChain(hit.x, hit.y, hit.finalDmg);
-
-          if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
-            // 在怪身上部署
-            w.x = hit.x;
-            w.y = hit.y;
-            w.deployed = true;
-            w.thrown = false;
-            w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
-            w.deployMaxT = w.deployT;
-            w.tickCd = 0.05;
-            if (w.el) w.el.style.display = 'none';
-            DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
-          } else {
-            // 普通武器打中直接销毁
-            DB.removeWeapon(w);
-          }
-        } else {
-          // 【打空了】：部署在鼠标瞄准的落点，或飞出屏幕
-          if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
-            w.x = DB.clamp(mouse.x, 40, W - 40);
-            w.y = DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
-            w.deployed = true;
-            w.thrown = false;
-            w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
-            w.deployMaxT = w.deployT;
-            w.tickCd = 0.05;
-            if (w.el) w.el.style.display = 'none';
-            DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
-            DB.sfx.chip();
-          } else {
-            // 普通武器打空，飞出去
-            w.thrown = true; w.age = 0;
-            w.vx = dirX * 1800; w.vy = dirY * 1800;
-            if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
-            else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * 20; }
-            DB.sfx.throw();
-          }
+      switch (w.type) {
+        case 'light_dart': {
+          DB.hitscanShot(p.x, p.y, angle - 0.05, range, w);
+          DB.hitscanShot(p.x, p.y, angle, range, w);
+          DB.hitscanShot(p.x, p.y, angle + 0.05, range, w);
+          DB.removeWeapon(w);
+          break;
         }
-        return;
-      } else {
-        // 鼠标太近，普通武器不处理，部署武器落在脚下
-        if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
-          w.deployed = true;
-          w.thrown = false;
-          w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
-          w.deployMaxT = w.deployT;
-          w.tickCd = 0.05;
-          if (w.el) w.el.style.display = 'none';
-          DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+        case 'stun_chip': {
+          DB.hitscanBounce(p.x, p.y, angle, range, w, 3);
+          DB.removeWeapon(w);
+          break;
         }
-        return;
+        case 'fire_shield': {
+          const tx = DB.clamp(mouse.x, 40, W - 40);
+          const ty = DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
+          DB.spawnZone({ kind: 'firewall', x: tx, y: ty, w: 180, h: 180, life: 0.35, dmg: w.baseDamage * 3, tickInterval: 0.1, color: '#ff7a3a' });
+          DB.spawnParticles(tx, ty, 24, '#ff7a3a', 400);
+          DB.removeWeapon(w);
+          break;
+        }
+        case 'link': {
+          DB.spawnBeam(p.x, p.y, angle, range, w, 1.2);
+          DB.removeWeapon(w);
+          break;
+        }
+        case 'gravity': {
+          const hit = DB.hitscanShot(p.x, p.y, angle, range, w);
+          // 命中点或鼠标位置
+          const tx = hit ? hit.x : DB.clamp(mouse.x, 40, W - 40);
+          const ty = hit ? hit.y : DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
+          
+          const blastDmg = w.baseDamage * 4; // 巨额伤害
+          const blastR = 300; // 大范围 AOE
+
+          // 范围判定
+          for (const e of DB.enemies) {
+            if (Math.hypot(e.x - tx, e.y - ty) < blastR) {
+              e.hp -= DB.applyVulnerable(e, blastDmg);
+              e.flashT = 0.25;
+              e.vulnerable = Math.max(e.vulnerable || 0, 3); // 附加易伤
+            }
+          }
+          if (DB.boss && DB.boss.phase === 'normal') {
+            if (Math.hypot(DB.boss.x - tx, DB.boss.y - ty) < blastR) {
+              DB.boss.hp -= DB.applyVulnerable(DB.boss, blastDmg);
+              DB.boss.flashT = 0.25;
+            }
+          }
+          
+          // 视觉爆发
+          DB.spawnParticles(tx, ty, 50, '#ffaa00', 800);
+          DB.spawnParticles(tx, ty, 30, '#ffffff', 1000);
+          if (DB.floaters) DB.floaters.push({ text: '☠️ 漏洞引爆!', x: tx, y: ty - 30, vy: -60, life: 1, maxLife: 1, color: '#ffaa00', isCrit: true });
+          
+          state.shake = Math.max(state.shake, 25);
+          DB.sfx.error();
+          DB.removeWeapon(w);
+          break;
+        }
+        case 'blackhole': {
+          for (let i = -2; i <= 2; i++) {
+            DB.hitscanShot(p.x, p.y, angle + i * 0.15, range, w);
+          }
+          DB.removeWeapon(w);
+          break;
+        }
+        case 'chain': {
+          DB.hitscanChain(p.x, p.y, angle, range, w, 5);
+          DB.removeWeapon(w);
+          break;
+        }
+        case 'code_slash': {
+          const fragW = Object.assign({}, w); // 克隆一份临时武器数据
+          fragW.baseDamage = w.baseDamage * 0.4; // 每道碎片伤害降至 40%
+          for (let i = 0; i < 8; i++) {
+            DB.hitscanShot(p.x, p.y, (i / 8) * Math.PI * 2, 400, fragW);
+          }
+          DB.removeWeapon(w);
+          break;
+        }
+        default: {
+          DB.hitscanShot(p.x, p.y, angle, range, w);
+          DB.removeWeapon(w);
+        }
       }
+      return;
     }
 
-    // ===== 防守方的部署分支 =====
-    if (w.type === 'gravity' || w.type === 'blackhole' || w.type === 'chain') {
+    // ===== 防守方的部署分支：生成对应场地 zone =====
+    if (w.type === 'gravity') {
+      DB.spawnZone({ kind: 'gravity', x: w.x, y: w.y, r: 280, life: 4, dmg: 8, tickInterval: 0.6, pushDown: 500, color: '#ffcc00' });
+      DB.spawnParticles(w.x, w.y, 24, '#ffcc00', 320);
+      DB.sfx.chip();
+      DB.removeWeapon(w);
+      return;
+    }
+    if (w.type === 'blackhole') {
+      DB.spawnZone({ kind: 'hackhole', x: w.x, y: w.y, r: 260, life: 3, dmg: 6, tickInterval: 0.5, pull: 300, color: '#c08bff' });
+      DB.spawnParticles(w.x, w.y, 24, '#c08bff', 320);
+      DB.sfx.chip();
+      DB.removeWeapon(w);
+      return;
+    }
+    if (w.type === 'chain') {
+      // 电塔：每 0.5s 触发一次 5 跳闪电
+      DB.spawnZone({ kind: 'chain_tower', x: w.x, y: w.y, r: 0, life: 4, dmg: 0, tickInterval: 0.5, color: '#5ae8ff' });
+      // 用 zoneTick 单独处理 chain_tower（见下）
       w.deployed = true;
       w.thrown = false;
       w.vx = 0; w.vy = 0; w.rotV = 0;
-      w.deployT = w.type === 'gravity' ? 5.0 : (w.type === 'blackhole' ? 3.0 : 4.0);
-      w.deployMaxT = w.deployT;
-      w.tickCd = 0.05;
-
+      w.deployT = 4.0;
+      w.deployMaxT = 4.0;
+      w.tickCd = 0.5;
       if (w.el) w.el.style.display = 'none';
-      DB.spawnParticles(w.x, w.y, 20, '#ffffff', 300);
+      DB.spawnParticles(w.x, w.y, 24, '#5ae8ff', 320);
       DB.sfx.chip();
       return;
     }
@@ -299,8 +341,12 @@
 
     w.thrown = true; w.age = 0;
     w.vx = dirX * speed; w.vy = dirY * speed;
-    if (w.type === 'code_slash') { w.rotV = 0; w.rot = 0; }
-    else { w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14); }
+    if (w.type === 'code_slash') {
+      w.boomerang = true;
+      w.rotV = 0; w.rot = 0;
+    } else {
+      w.rotV = (Math.random() > 0.5 ? 1 : -1) * (6 + t * 14);
+    }
 
     DB.sfx.throw();
   };
@@ -311,12 +357,12 @@
     DB.sfx.error();
     for (const e of DB.enemies) {
       if (Math.hypot(e.x - cx, e.y - cy) < 300) {
-        e.hp -= dmg * 2;
+        e.hp -= DB.applyVulnerable(e, dmg * 2);
         e.flashT = 0.15;
       }
     }
     if (DB.boss && DB.boss.phase === 'normal') {
-      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) DB.boss.hp -= dmg * 2;
+      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) DB.boss.hp -= DB.applyVulnerable(DB.boss, dmg * 2);
     }
     for (let i = 0; i < 40; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -332,7 +378,7 @@
       if (d < 300) {
         e.x += (dx / d) * 400 * (1 - d / 300);
         e.y += (dy / d) * 400 * (1 - d / 300);
-        e.hp -= dmg * 0.5;
+        e.hp -= DB.applyVulnerable(e, dmg * 0.5);
         e.flashT = 0.1;
       }
     }
@@ -348,13 +394,13 @@
     for (const e of DB.enemies) {
       const dx = cx - e.x, dy = cy - e.y;
       if (Math.hypot(dx, dy) < 300) {
-        e.hp -= dmg * 0.6;
+        e.hp -= DB.applyVulnerable(e, dmg * 0.6);
         e.flashT = 0.1;
       }
     }
     if (DB.boss && DB.boss.phase === 'normal') {
       if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) {
-        DB.boss.hp -= dmg * 0.6;
+        DB.boss.hp -= DB.applyVulnerable(DB.boss, dmg * 0.6);
         DB.boss.flashT = 0.1;
       }
     }
@@ -372,21 +418,24 @@
   DB.triggerChain = function (cx, cy, baseDmg) {
     let lastX = cx, lastY = cy;
     let currentDmg = baseDmg;
-    for (let chain = 0; chain < 3; chain++) {
+    const hitSet = new Set();
+    for (let chain = 0; chain < 5; chain++) {
       let nearest = null, minD = 250;
       for (const e of DB.enemies) {
+        if (hitSet.has(e)) continue;
         const d = Math.hypot(e.x - lastX, e.y - lastY);
         if (d < minD && e.hp > 0) { minD = d; nearest = e; }
       }
       if (!nearest) break;
+      hitSet.add(nearest);
 
       for (let i = 0; i < 10; i++) {
         const t = i / 10;
         DB.particles.push({ x: lastX + (nearest.x - lastX) * t + (Math.random()-0.5)*20, y: lastY + (nearest.y - lastY) * t + (Math.random()-0.5)*20, vx: 0, vy: 0, life: 0.15, maxLife: 0.15, size: 4, color: '#5ae8ff', spin: 0, rot: 0 });
       }
-      nearest.hp -= currentDmg;
+      nearest.hp -= DB.applyVulnerable(nearest, currentDmg);
       nearest.flashT = 0.15;
-      currentDmg *= 0.8;
+      currentDmg *= 0.85;
       lastX = nearest.x; lastY = nearest.y;
     }
   };
@@ -527,6 +576,22 @@
           } else {
             w.vy += CFG.GRAVITY * dt;
             w.vx *= Math.exp(-CFG.AIR_DRAG * dt);
+          }
+        }
+
+        // 回旋镖：飞出 1.2s 后飞回玩家
+        if (w.boomerang) {
+          if (w.age > 1.2) {
+            const p = DB.player;
+            const dx = p.x - w.x, dy = p.y - w.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const retSpeed = 1000;
+            w.vx += (dx / d) * retSpeed * 3 * dt;
+            w.vy += (dy / d) * retSpeed * 3 * dt;
+            // 限速
+            const sp = Math.hypot(w.vx, w.vy);
+            if (sp > 1400) { w.vx = w.vx / sp * 1400; w.vy = w.vy / sp * 1400; }
+            if (d < 50) { DB.removeWeapon(w); continue; }
           }
         }
 
@@ -788,7 +853,7 @@
       if (d < 300) {
         e.x += (dx / d) * 300 * (1 - d / 300);
         e.y += (dy / d) * 300 * (1 - d / 300);
-        e.hp -= dmg * 1.5;
+        e.hp -= DB.applyVulnerable(e, dmg * 1.5);
         e.flashT = 0.15;
         if (e.hp <= 0 && DB.killEnemy) DB.killEnemy(DB.enemies.indexOf(e));
       }
@@ -801,6 +866,296 @@
         vx: -Math.cos(a) * 500, vy: -Math.sin(a) * 500,
         life: 0.5, maxLife: 0.5, size: 5, color: '#5ae8ff', spin: 0, rot: a
       });
+    }
+  };
+
+  DB.spawnZone = function (opts) {
+    DB.zones.push({
+      kind: opts.kind,                 // 'firewall' | 'gravity' | 'hackhole' | 'intake'
+      x: opts.x, y: opts.y,
+      r: opts.r || 0,
+      w: opts.w || 0, h: opts.h || 0,
+      life: opts.life,
+      maxLife: opts.life,
+      dmg: opts.dmg || 0,
+      tickCd: 0,
+      tickInterval: opts.tickInterval || 0.5,
+      color: opts.color || '#5ae8ff',
+      seed: Math.random() * 100,
+      pull: opts.pull || 0,
+      pushDown: opts.pushDown || 0
+    });
+  };
+
+  DB.zoneTick = function (z) {
+    if (z.kind === 'firewall') {
+      for (const e of DB.enemies) {
+        if (Math.abs(e.x - z.x) < z.w / 2 && Math.abs(e.y - z.y) < z.h / 2) {
+          e.hp -= DB.applyVulnerable(e, z.dmg);
+          e.flashT = 0.1;
+        }
+      }
+    } else if (z.kind === 'gravity' || z.kind === 'hackhole') {
+      for (const e of DB.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r) {
+          const applied = DB.applyVulnerable(e, z.dmg);
+          e.hp -= applied;
+          e.flashT = 0.12;
+          if (DB.floaters) {
+            DB.floaters.push({
+              text: `-${Math.round(applied)}`,
+              x: e.x + (Math.random() - 0.5) * 24,
+              y: e.y - 24,
+              vy: -60, life: 0.6, maxLife: 0.6,
+              color: z.kind === 'gravity' ? '#ffcc00' : '#c08bff'
+            });
+          }
+        }
+      }
+    }
+  };
+
+  DB.updateZones = function (dt) {
+    for (let i = DB.zones.length - 1; i >= 0; i--) {
+      const z = DB.zones[i];
+      z.life -= dt;
+      if (z.life <= 0) { DB.zones.splice(i, 1); continue; }
+
+      // 持续位移效果
+      if (z.kind === 'gravity') {
+        for (const e of DB.enemies) {
+          const dx = z.x - e.x, dy = z.y - e.y;
+          const d = Math.max(1, Math.hypot(dx, dy));
+          if (d < z.r * 1.1 && d > 12) {
+            // 缓慢吸附向 zone 中心（重力感），不会把敌人推出去
+            const pull = 140 * dt;
+            e.x += (dx / d) * pull;
+            e.y += (dy / d) * pull;
+            if (e.type === 'drone') {
+              e.baseX += (dx / d) * pull;
+              e.baseY += (dy / d) * pull;
+            }
+          }
+        }
+      }
+      if ((z.kind === 'hackhole' || z.kind === 'intake') && z.pull > 0) {
+        for (const e of DB.enemies) {
+          const dx = z.x - e.x, dy = z.y - e.y;
+          const d = Math.max(1, Math.hypot(dx, dy));
+          if (d < z.r) {
+            const k = z.pull * (1 - d / z.r) * dt;
+            e.x += (dx / d) * k;
+            e.y += (dy / d) * k;
+            if (e.type === 'drone') { e.baseX += (dx / d) * k; e.baseY += (dy / d) * k; }
+          }
+        }
+      }
+
+      z.tickCd -= dt;
+      if (z.tickCd <= 0) {
+        z.tickCd = z.tickInterval;
+        DB.zoneTick(z);
+      }
+    }
+  };
+
+  DB.drawZones = function (ctx) {
+    for (const z of DB.zones) {
+      const fadeIn  = Math.min(1, (z.maxLife - z.life) / 0.2 + 0.2);
+      const fadeOut = Math.min(1, z.life / 0.3);
+      ctx.save();
+      ctx.globalAlpha = fadeIn * fadeOut;
+
+      if (z.kind === 'firewall') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 14 + z.seed);
+        ctx.fillStyle = `rgba(255, 120, 60, ${0.15 + pulse * 0.15})`;
+        ctx.strokeStyle = '#ff7a3a';
+        ctx.shadowColor = '#ff7a3a'; ctx.shadowBlur = 18;
+        ctx.lineWidth = 2;
+        ctx.fillRect(z.x - z.w / 2, z.y - z.h / 2, z.w, z.h);
+        ctx.strokeRect(z.x - z.w / 2, z.y - z.h / 2, z.w, z.h);
+        // 内部网格线
+        ctx.globalAlpha *= 0.4;
+        ctx.strokeStyle = '#ffcc99';
+        ctx.lineWidth = 1;
+        for (let x = z.x - z.w / 2 + 20; x < z.x + z.w / 2; x += 20) {
+          ctx.beginPath(); ctx.moveTo(x, z.y - z.h / 2); ctx.lineTo(x, z.y + z.h / 2); ctx.stroke();
+        }
+      } else if (z.kind === 'gravity') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 12 + z.seed);
+        ctx.fillStyle = `rgba(255, 204, 0, ${0.08 + pulse * 0.06})`;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = `rgba(255, 204, 0, ${0.4 + pulse * 0.4})`;
+        ctx.lineWidth = 2; ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 20;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.stroke();
+        // 下压箭头
+        ctx.globalAlpha *= 0.7;
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + state.t;
+          const px = z.x + Math.cos(a) * z.r * 0.7;
+          const py = z.y + Math.sin(a) * z.r * 0.7;
+          ctx.beginPath();
+          ctx.moveTo(px, py - 12); ctx.lineTo(px - 6, py); ctx.lineTo(px + 6, py);
+          ctx.closePath(); ctx.fillStyle = '#ffcc00'; ctx.fill();
+        }
+      } else if (z.kind === 'hackhole') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 8 + z.seed);
+        ctx.shadowColor = '#c08bff'; ctx.shadowBlur = 30;
+        ctx.strokeStyle = `rgba(192, 139, 255, ${0.5 + pulse * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(z.x, z.y, 60 + pulse * 10, 20 + pulse * 5, state.t * 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(z.x, z.y, 25, 0, Math.PI * 2); ctx.fill();
+      } else if (z.kind === 'intake') {
+        const pulse = 0.5 + 0.5 * Math.sin(state.t * 10 + z.seed);
+        ctx.strokeStyle = `rgba(255, 90, 122, ${0.4 + pulse * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 10]);
+        ctx.lineDashOffset = -state.t * 60;
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255, 90, 122, 0.15)';
+        ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  };
+
+  // ===== 黑客射击系统 =====
+  DB.hitscanShot = function (ox, oy, angle, range, w) {
+    const tx = ox + Math.cos(angle) * range;
+    const ty = oy + Math.sin(angle) * range;
+    const hit = DB.hitscanHit(ox, oy, tx, ty, w);
+    if (!hit) {
+      for (let i = 0; i < 30; i++) {
+        const t = i / 30;
+        DB.particles.push({
+          x: ox + (tx - ox) * t + (Math.random() - 0.5) * 4,
+          y: oy + (ty - oy) * t + (Math.random() - 0.5) * 4,
+          vx: 0, vy: 0,
+          life: 0.18, maxLife: 0.18,
+          size: 4, color: '#ff5a7a', spin: 0, rot: 0
+        });
+      }
+    }
+    return hit;
+  };
+
+  DB.hitscanBounce = function (ox, oy, angle, range, w, bounces) {
+    let cx = ox, cy = oy, curAngle = angle;
+    const hitSet = new Set();
+    for (let i = 0; i <= bounces; i++) {
+      const hit = DB.hitscanShot(cx, cy, curAngle, range, w);
+      if (!hit) break;
+      hitSet.add(hit.enemy || hit.boss);
+      if (i >= bounces) break;
+      let nearest = null, minD = 350;
+      for (const e of DB.enemies) {
+        if (e.dead || hitSet.has(e)) continue;
+        const d = Math.hypot(e.x - hit.x, e.y - hit.y);
+        if (d < minD) { minD = d; nearest = e; }
+      }
+      if (!nearest) break;
+      for (let k = 0; k < 8; k++) {
+        const t = k / 8;
+        DB.particles.push({ x: hit.x + (nearest.x - hit.x) * t, y: hit.y + (nearest.y - hit.y) * t, vx: 0, vy: 0, life: 0.2, maxLife: 0.2, size: 4, color: '#ff5a7a', spin: 0, rot: 0 });
+      }
+      cx = hit.x; cy = hit.y;
+      curAngle = Math.atan2(nearest.y - cy, nearest.x - cx);
+    }
+  };
+
+  DB.hitscanChain = function (ox, oy, angle, range, w, count) {
+    let cx = ox, cy = oy, curAngle = angle;
+    const hitSet = new Set();
+    for (let i = 0; i <= count; i++) {
+      const hit = DB.hitscanShot(cx, cy, curAngle, range, w);
+      if (!hit) break;
+      hitSet.add(hit.enemy || hit.boss);
+      if (hit.enemy) hit.enemy.virus = true;
+      if (hit.boss) hit.boss.virus = true;
+      if (i >= count) break;
+      let nearest = null, minD = 250;
+      for (const e of DB.enemies) {
+        if (e.dead || hitSet.has(e)) continue;
+        const d = Math.hypot(e.x - hit.x, e.y - hit.y);
+        if (d < minD) { minD = d; nearest = e; }
+      }
+      if (!nearest) break;
+      for (let k = 0; k < 6; k++) {
+        const t = k / 6;
+        DB.particles.push({ x: hit.x + (nearest.x - hit.x) * t, y: hit.y + (nearest.y - hit.y) * t, vx: 0, vy: 0, life: 0.15, maxLife: 0.15, size: 4, color: '#ffcc00', spin: 0, rot: 0 });
+      }
+      cx = hit.x; cy = hit.y;
+      curAngle = Math.atan2(nearest.y - cy, nearest.x - cx);
+    }
+  };
+
+  DB.spawnBeam = function (ox, oy, angle, range, w, duration) {
+    DB.beams.push({
+      ox, oy, angle, range,
+      life: duration, maxLife: duration,
+      dmg: w.baseDamage * (1 + state.mods.damage),
+      tickCd: 0, tickInterval: 0.08
+    });
+  };
+
+  DB.updateBeams = function (dt) {
+    for (let i = DB.beams.length - 1; i >= 0; i--) {
+      const b = DB.beams[i];
+      b.life -= dt;
+      if (b.life <= 0) { DB.beams.splice(i, 1); continue; }
+      b.tickCd -= dt;
+      if (b.tickCd <= 0) {
+        b.tickCd = b.tickInterval;
+        const tx = b.ox + Math.cos(b.angle) * b.range;
+        const ty = b.oy + Math.sin(b.angle) * b.range;
+        const dx = tx - b.ox, dy = ty - b.oy;
+        const len2 = dx * dx + dy * dy;
+        for (const e of DB.enemies) {
+          if (e.dead) continue;
+          const ex = e.x - b.ox, ey = e.y - b.oy;
+          let t = (ex * dx + ey * dy) / len2;
+          if (t < 0) continue;
+          if (t > 1) t = 1;
+          const px = b.ox + dx * t, py = b.oy + dy * t;
+          const dd = Math.hypot(e.x - px, e.y - py);
+          if (dd < e.r + 12) {
+            e.hp -= DB.applyVulnerable(e, b.dmg * 0.8); // 伤害倍率提升接近 3 倍
+            e.flashT = 0.1;
+            e.slowT = Math.max(e.slowT || 0, 0.5); // 减速加强
+          }
+        }
+      }
+    }
+  };
+
+  DB.drawBeams = function (ctx) {
+    for (const b of DB.beams) {
+      const alpha = Math.min(1, b.life / 0.2) * Math.min(1, (b.maxLife - b.life) / 0.1 + 0.5);
+      const tx = b.ox + Math.cos(b.angle) * b.range;
+      const ty = b.oy + Math.sin(b.angle) * b.range;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#ff5a7a';
+      ctx.shadowColor = '#ff5a7a';
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 8 + Math.sin(state.t * 30) * 2;
+      ctx.beginPath();
+      ctx.moveTo(b.ox, b.oy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(b.ox, b.oy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.restore();
     }
   };
 

@@ -54,4 +54,7 @@
   DB.uid = 0;
   DB.nextUid = function () { return ++DB.uid; };
 
+  DB.zones = [];
+  DB.beams = [];
+
 })(window.DB);

@@ -495,12 +495,36 @@ canvas.layer {
   box-shadow: 0 0 40px rgba(90, 240, 255, 0.15) inset, 0 10px 40px rgba(0, 0, 0, 0.8);
   border-radius: 12px;
   padding: 30px 40px;
-  width: 560px;
-  max-width: 90vw; 
+  width: 860px;         /* 加宽以支持双列 */
+  max-width: 95vw; 
   position: relative;
   animation: modalIn 0.2s ease-out;
   max-height: 85vh;       
   overflow-y: auto; 
+}
+
+/* ===== 自定义滚动条 ===== */
+#modal-content::-webkit-scrollbar {
+  width: 8px;
+}
+#modal-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  margin: 10px 0;
+}
+#modal-content::-webkit-scrollbar-thumb {
+  background: rgba(90, 240, 255, 0.4);
+  border-radius: 4px;
+}
+#modal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 240, 255, 0.8);
+}
+/* 黑客模式下的红色滚动条 */
+#title-screen.hacker-theme ~ #modal-layer #modal-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 90, 122, 0.4);
+}
+#title-screen.hacker-theme ~ #modal-layer #modal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 90, 122, 0.8);
 }
 @keyframes modalIn {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }

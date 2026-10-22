@@ -82,18 +82,104 @@
   /* ==================== 标题画面 ==================== */
   let currentMode = 'defender';
   const RULES_DEFENDER = `
-    <div style="color:#5ae8ff; font-weight:bold; margin-bottom:8px; border-bottom:1px dashed rgba(90,240,255,0.3); padding-bottom:4px;">🛡️ 安全卫士操作指南</div>
-    <div class="rule-row"><span class="key">WASD</span><span class="txt">移动走位，躲避弹幕</span></div>
-    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取模块，向后拉弓，松手弹射。<b>拉得越满越猛</b>（有音效与屏幕提示）</span></div>
-    <div class="rule-row"><span class="key">SHIFT</span><span class="txt"><b>全息反射盾</b>：1.5秒内减伤80%，反伤周围敌人。</span></div>
-    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放大招；Boss瘫痪时处决</span></div>
+    <div style="color:#5ae8ff; font-weight:bold; margin-bottom:16px; border-bottom:1px dashed rgba(90,240,255,0.3); padding-bottom:8px; font-size:16px; letter-spacing:1px;">🛡️ 安全卫士 · 完整指南</div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+      <!-- 左列 -->
+      <div>
+        <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避弹幕</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">鼠标</span><span class="txt">抓取武器，按住向后拉弓，松手弹射。拉得越满弹得越快</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">全息反射盾：1.5 秒内减伤 80%，反伤周围敌人（冷却 5 秒）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">1-4</span><span class="txt">能量满时释放大招；Boss 瘫痪时输入覆盖码处决</span></div>
+        
+        <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 核心循环</div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px;">流程</span><span class="txt">终端打字产出 → 抓取武器 → 拉弓 → 命中敌人 → 击杀掉芯片 → 拾取变强 → 守住波次</span></div>
+
+        <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 敌人 & Boss</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">种类</span><span class="txt">无人机 / 蠕虫 / 护盾兵 / 炮塔 / 冲锋者 / 裂变体，各有不同攻击模式</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">Boss</span><span class="txt">第 5 / 15 波小 Boss，第 10 / 20 波大 Boss；血量降到 <b>25%</b> 会狂暴</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">QTE</span><span class="txt">打空 Boss 血条触发覆盖码，输入 <b>6 / 8</b> 位即可处决（满血满能量 + 爆芯片）</span></div>
+      </div>
+
+      <!-- 右列 -->
+      <div>
+        <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 武器 · 8 种</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">⚡ 探针</span><span class="txt">直线穿透，最多穿 <b>3</b> 个敌人，每个都掉血</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🛑 阻断</span><span class="txt">命中后目标瘫痪 <b>1.5 秒</b>（禁动 + 禁火）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🛡️ 火墙</span><span class="txt">落地生成矩形火墙（200×70），持续 3 秒，触碰掉血</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🔗 牵引</span><span class="txt">命中后把 <b>250</b> 范围内的敌人吸向命中点聚拢</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🌐 重力</span><span class="txt">落地生成重力井（半径 280，持续 4 秒），吸附 + 掉血</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🌀 黑洞</span><span class="txt">落地生成黑洞（半径 260，持续 3 秒），强吸 + 掉血</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">⚡ 闪电</span><span class="txt">命中后闪电跳 <b>5</b> 次，每次伤害递减 15%</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">&gt; 光刃</span><span class="txt">回旋镖：飞出 1.2 秒后飞回玩家，去程 + 回程都造成伤害</span></div>
+
+        <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 大招 · 4 种</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[1]</span><span class="txt"><b>代码暴雨</b> —— 全屏下落弹幕，大量伤害</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[2]</span><span class="txt"><b>时间凝滞</b> —— 清空子弹，冻结所有敌人 3 秒</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[3]</span><span class="txt"><b>系统重载</b> —— 恢复 50% 最大生命</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[4]</span><span class="txt"><b>核心熔毁</b> —— 献祭所有武器原地专属爆炸，最后中心核爆</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; border-top: 1px dashed rgba(90,240,255,0.3); padding-top: 16px;">
+      <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 芯片 · 3 档</div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#dff3ff; border-color:rgba(220,240,255,.35);">白·常见</span><span class="txt" style="font-size:11px;">伤害 +5% / 抓取 +15 / 弹射 +5% / 恢复 15HP / 上限 +10 / 移速 +6% / 暴伤 +15%</span></div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#7aaaff; border-color:rgba(122,170,255,.5);">蓝·稀有</span><span class="txt" style="font-size:11px;">伤害 +12% / 击杀吸血 +3 / 移速 +12% / 暴击率 +5% + 暴伤 +10%</span></div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#d08bff; border-color:rgba(208,139,255,.5);">紫·史诗</span><span class="txt" style="font-size:11px;">伤害 +10% + 吸血 +5 / 移速 +20% + 抓取 +20 / 暴击率 +10% + 暴伤 +30%</span></div>
+      </div>
+    </div>
   `;
   const RULES_HACKER = `
-    <div style="color:#ff5a7a; font-weight:bold; margin-bottom:8px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:4px;">😈 黑客入侵指南</div>
-    <div class="rule-row"><span class="key">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
-    <div class="rule-row"><span class="key">鼠标</span><span class="txt">抓取病毒，<b>按住瞄准，松开瞬发激光狙击</b>。</span></div>
-    <div class="rule-row"><span class="key">SHIFT</span><span class="txt"><b>病毒引爆</b>：清空全屏子弹，感染所有敌人引发连环爆炸。</span></div>
-    <div class="rule-row"><span class="key">1-4</span><span class="txt">能量满时释放大招；Boss瘫痪时处决</span></div>
+    <div style="color:#ff5a7a; font-weight:bold; margin-bottom:16px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:8px; font-size:16px; letter-spacing:1px;">😈 黑客入侵 · 完整指南</div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+      <!-- 左列 -->
+      <div>
+        <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">鼠标</span><span class="txt">抓取病毒，按住瞄准，松手瞬发狙击（命中第一个敌人）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">病毒引爆：清空全屏子弹，感染所有敌人连环爆炸（冷却 6 秒）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">1-4</span><span class="txt">能量满时释放大招；Boss 瘫痪时输入覆盖码处决</span></div>
+        
+        <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 核心循环</div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px;">流程</span><span class="txt">终端打字产出 → 抓取病毒 → 瞄准狙击（瞬时命中）→ 击杀掉芯片 → 拾取变强 → 守住波次</span></div>
+
+        <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 敌人 & Boss</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">种类</span><span class="txt">无人机 / 蠕虫 / 护盾兵 / 炮塔 / 冲锋者 / 裂变体，各有不同攻击模式</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">Boss</span><span class="txt">第 5 / 15 波小 Boss，第 10 / 20 波大 Boss；血量降到 <b>25%</b> 会狂暴</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">QTE</span><span class="txt">打空 Boss 血条触发覆盖码，输入 <b>6 / 8</b> 位即可处决（满血满能量 + 爆芯片）</span></div>
+      </div>
+
+      <!-- 右列 -->
+      <div>
+        <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 武器 · 8 种</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">💀 飞刀</span><span class="txt">一次射出 <b>3</b> 道平行激光，每道独立命中</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🧬 宏病毒</span><span class="txt">弹射激光：命中后自动跳向最近敌人，最多弹 <b>3</b> 次</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">☣️ 勒索</span><span class="txt">无需瞄准敌人，直接在鼠标位置范围爆炸（180×180）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🕸️ 蠕虫</span><span class="txt">射出持续 <b>1.2 秒</b> 激光柱，路径上的敌人持续受伤 + 减速</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">☠️ 零日</span><span class="txt">命中后标记敌人（易伤 + 减速），1 秒后从玩家位置发射追踪弹</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🕳️ 断网</span><span class="txt"><b>5</b> 道扇形激光同时射出，命中的敌人禁火 2 秒</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">🦠 传染</span><span class="txt">命中后闪电链向 <b>5</b> 个敌人跳跃，被感染目标死亡时爆发</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">&gt; 碎片</span><span class="txt">从玩家身体 <b>8</b> 方向发射短程激光（近距清屏）</span></div>
+
+        <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 大招 · 4 种</div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[1]</span><span class="txt"><b>逻辑炸弹</b> —— 全屏敌人受击并附加易伤 6 秒</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[2]</span><span class="txt"><b>冻结协议</b> —— 清空子弹，所有敌人减速 4 秒</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[3]</span><span class="txt"><b>紧急重启</b> —— 恢复 40% 最大生命 + 补 3 把武器</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">[4]</span><span class="txt"><b>万剑归宗</b> —— 未部署武器变追踪导弹；已部署阵地核爆</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 24px; border-top: 1px dashed rgba(255,90,122,0.3); padding-top: 16px;">
+      <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 芯片 · 3 档</div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#ffd8e2; border-color:rgba(255,216,226,.35);">白·常见</span><span class="txt" style="font-size:11px;">伤害 +5% / 抓取 +15 / 弹射 +5% / 恢复 15HP / 上限 +10 / 移速 +6% / 暴伤 +15%</span></div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#7aaaff; border-color:rgba(122,170,255,.5);">蓝·稀有</span><span class="txt" style="font-size:11px;">伤害 +12% / 击杀吸血 +3 / 移速 +12% / 暴击率 +5% + 暴伤 +10%</span></div>
+        <div class="rule-row"><span class="key" style="flex:0 0 64px; color:#d08bff; border-color:rgba(208,139,255,.5);">紫·史诗</span><span class="txt" style="font-size:11px;">伤害 +10% + 吸血 +5 / 移速 +20% + 抓取 +20 / 暴击率 +10% + 暴伤 +30%</span></div>
+      </div>
+    </div>
   `;
 
   function showTitle() { dom.titleEl.classList.remove('hidden'); }
@@ -142,9 +228,10 @@
     const btnHp = document.getElementById('up-hp'), btnEnergy = document.getElementById('up-energy'), btnChip = document.getElementById('up-chip');
     const btnWeapon = document.getElementById('up-weapon'), btnDuration = document.getElementById('up-duration'), btnDamage = document.getElementById('up-damage'), btnCrit = document.getElementById('up-crit');
 
+    const HP_COST_CAP = 100000;
     function getCost(type, level) {
       level = level || 0;
-      if (type === 'hp') return Math.floor(50 * (1.3 ** level));
+      if (type === 'hp') return Math.min(HP_COST_CAP, Math.floor(50 * (1.3 ** level)));
       if (type === 'energy') return Math.floor(80 * (1.5 ** level));
       if (type === 'chip') return Math.floor(100 * (1.4 ** level));
       if (type === 'weapon') return Math.floor(150 * (1.6 ** level));
@@ -260,32 +347,79 @@
     const tut = state.tutorial;
     const p = DB.player;
 
+    // 1. 移动
     if (tut.step === 1) {
       const moved = Math.hypot(p.x - tut.startX, p.y - tut.startY);
       if (moved > 100) tut.step = 2;
     }
+    // 2. 抓取
     else if (tut.step === 2) {
+      if (DB.heldWeapon) tut.step = 3;
+    }
+    // 3. 瞄准/拉弓
+    else if (tut.step === 3) {
       if (state.mode === 'defender') {
         if (DB.heldWeapon) {
           const dd = Math.hypot(DB.mouse.x - DB.heldWeapon.anchorX, DB.mouse.y - DB.heldWeapon.anchorY);
-          if (dd > 100) { tut.pullDist = dd; tut.step = 3; }
+          if (dd > 150) tut.step = 4; // 稍微降低拉弓判定距离
         }
       } else {
-        const dist = Math.hypot(DB.mouse.x - p.x, DB.mouse.y - p.y);
-        if (dist > 200) tut.step = 3;
+        const dummy = DB.enemies.find(e => e.type === 'dummy');
+        if (dummy) {
+          const dist = Math.hypot(DB.mouse.x - dummy.x, DB.mouse.y - dummy.y);
+          if (dist < 250) tut.step = 4; // 稍微放宽黑客瞄准判定
+        }
       }
     }
-    else if (tut.step === 3) {
-      if (tut.hitDummy) tut.step = 4;
-    }
+    // 4. 开火
     else if (tut.step === 4) {
-      if (state.skillCd > 0) tut.step = 5;
+      const dummy = DB.enemies.find(e => e.type === 'dummy');
+      // 只要松开鼠标，或者木桩受到伤害，立刻进下一步
+      if ((!DB.mouse.down && !DB.heldWeapon) || (!dummy || dummy.hp < dummy.maxHp)) {
+        tut.step = 5;
+        // 【保险】强制在玩家身边发一个芯片，防止打空或没掉芯片卡住
+        DB.spawnChip(p.x + 60, p.y);
+      }
     }
+    // 5. 拾取芯片
     else if (tut.step === 5) {
-      if (state.energy === 0) {
+      if (DB.chips.length === 0) {
         tut.step = 6;
+        state.energy = state.energyMax; 
+        // 刷 3 只弱怪给玩家测试 SHIFT
+        for(let i=0; i<3; i++) {
+           DB.enemies.push({
+             type: 'drone', x: p.x + 250 + Math.random()*150, y: p.y - 100 + Math.random()*200,
+             baseX: p.x + 250 + Math.random()*150, baseY: p.y - 100 + Math.random()*200,
+             seed: Math.random() * 100, hp: 30, maxHp: 30, r: 20, dmg: 0, fireCd: 999, flashT: 0, frozen: 0
+           });
+        }
+      }
+    }
+    // 6. SHIFT 技能
+    else if (tut.step === 6) {
+      if (state.skillCd > 0) {
+        tut.step = 7;
+        state.energy = state.energyMax; // 【保险】强制补满能量
+        DB.enemies.length = 0; // 清场
+        // 重新刷 5 只怪，保证大招有东西打
+        for(let i=0; i<5; i++) {
+           DB.enemies.push({
+             type: 'drone', x: p.x + 200 + Math.random()*300, y: p.y - 150 + Math.random()*300,
+             baseX: p.x + 200 + Math.random()*300, baseY: p.y - 150 + Math.random()*300,
+             seed: Math.random() * 100, hp: 30, maxHp: 30, r: 20, dmg: 0, fireCd: 999, flashT: 0, frozen: 0
+           });
+        }
+      }
+    }
+    // 7. 大招
+    else if (tut.step === 7) {
+      // 【修复】只要能量被扣除，就判定大招释放成功（防秒杀回能导致卡死）
+      if (state.energy < state.energyMax) {
+        tut.step = 8;
         state.flash = 1.0;
         DB.sfx.clear();
+        DB.enemies.length = 0;
       }
     }
   }
@@ -347,6 +481,8 @@
     bgCtx.drawImage(gridCanvas, 0, 0);
     DB.drawDeployedWeapons(bgCtx);
     DB.drawChips(bgCtx); DB.drawEnemyBullets(bgCtx); DB.drawEnemies(bgCtx); DB.drawPlayer(bgCtx); DB.drawSpawnWarnings(bgCtx);
+    DB.drawZones(bgCtx);
+    DB.drawBeams(bgCtx);
     bgCtx.restore();
 
     if (state.scene === 'playing') {
@@ -362,18 +498,75 @@
       // ===== 教程悬浮 UI =====
       if (state.tutorial.active) {
         const tut = state.tutorial;
+        const p = DB.player;
         let title = '', desc = '';
-        if (tut.step === 1) { title = "第一课：移动"; desc = "使用 [W][A][S][D] 移动你的角色。"; }
-        else if (tut.step === 2) { 
-          title = "第二课：抓取与瞄准"; 
-          desc = state.mode === 'defender' ? "按住鼠标抓取武器，向后拉动，感受张力提示。" : "按住鼠标抓取病毒，移动鼠标瞄准木桩。"; 
+        
+        if (tut.step === 1) { 
+           title = "第一课：移动"; 
+           desc = "使用 [W][A][S][D] 移动你的角色。"; 
         }
-        else if (tut.step === 3) { title = "第三课：开火"; desc = "松开鼠标开火，命中远处的木桩！"; }
-        else if (tut.step === 4) { title = "第四课：核心技能"; desc = "按下 [SHIFT] 释放阵营专属技能。"; }
-        else if (tut.step === 5) { title = "第五课：终极绝招"; desc = "按数字键 [1] 释放大招，扫清一切！"; }
-        else if (tut.step === 6) { title = "教程完成！"; desc = "准备就绪。点击屏幕返回主菜单，开始真正的战斗吧！"; }
+        else if (tut.step === 2) { 
+           title = "第二课：抓取武器"; 
+           desc = "将鼠标悬停在任意发光武器上，按住左键抓取。"; 
+        }
+        else if (tut.step === 3) { 
+           if (state.mode === 'defender') {
+             title = "第三课：向后拉弓"; 
+             desc = "按住左键并向后拉动鼠标，拉得越满力度越大。"; 
+           } else {
+             title = "第三课：瞄准敌人"; 
+             desc = "移动鼠标，将准星对准远处的木桩。"; 
+           }
+        }
+        else if (tut.step === 4) { 
+           title = "第四课：开火！"; 
+           desc = "松开鼠标，击碎木桩！"; 
+        }
+        else if (tut.step === 5) { 
+           title = "第五课：拾取芯片"; 
+           desc = "靠近发光芯片，它会自动吸附并强化你的属性。"; 
+        }
+        else if (tut.step === 6) { 
+           title = "第六课：核心技能"; 
+           desc = "按下 [SHIFT] 释放阵营专属技能，清理眼前的敌人。"; 
+           // 画 SHIFT 键提示
+           bgCtx.save();
+           bgCtx.fillStyle = 'rgba(0,0,0,0.8)';
+           bgCtx.strokeStyle = state.mode === 'defender' ? '#5ae8ff' : '#ffcc00';
+           bgCtx.lineWidth = 2;
+           bgCtx.beginPath();
+           bgCtx.roundRect(VW/2 - 50, VH/2 + 40, 100, 40, 6);
+           bgCtx.fill(); bgCtx.stroke();
+           bgCtx.fillStyle = state.mode === 'defender' ? '#5ae8ff' : '#ffcc00';
+           bgCtx.font = 'bold 18px monospace';
+           bgCtx.textAlign = 'center';
+           bgCtx.fillText('SHIFT', VW/2, VH/2 + 66);
+           bgCtx.restore();
+        }
+        else if (tut.step === 7) { 
+           title = "第七课：终极绝招"; 
+           desc = "按下数字键 [1] 释放终极技能，扫清一切！"; 
+           // 画 [1] 键提示
+           bgCtx.save();
+           bgCtx.fillStyle = 'rgba(0,0,0,0.8)';
+           bgCtx.strokeStyle = '#ffcc00';
+           bgCtx.lineWidth = 2;
+           bgCtx.beginPath();
+           bgCtx.roundRect(VW/2 - 30, VH/2 + 40, 60, 60, 6);
+           bgCtx.fill(); bgCtx.stroke();
+           bgCtx.fillStyle = '#ffcc00';
+           bgCtx.font = 'bold 24px monospace';
+           bgCtx.textAlign = 'center';
+           bgCtx.fillText('1', VW/2, VH/2 + 80);
+           bgCtx.restore();
+        }
+        else if (tut.step === 8) { 
+           title = "教程完成！"; 
+           desc = "你已掌握所有基础操作，点击屏幕返回主菜单。"; 
+        }
 
-        bgCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        // 绘制顶部提示框
+        bgCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         bgCtx.strokeStyle = state.mode === 'defender' ? '#5ae8ff' : '#ff5a7a';
         bgCtx.lineWidth = 2;
         bgCtx.beginPath(); bgCtx.roundRect(VW/2 - 300, 100, 600, 100, 10); bgCtx.fill(); bgCtx.stroke();
@@ -381,20 +574,12 @@
         bgCtx.shadowBlur = 0;
         bgCtx.fillStyle = state.mode === 'defender' ? '#5ae8ff' : '#ff5a7a';
         bgCtx.font = 'bold 20px ui-monospace, monospace';
+        bgCtx.textAlign = 'center';
         bgCtx.fillText(title, VW / 2, 135);
         
         bgCtx.fillStyle = '#ffffff';
         bgCtx.font = '14px ui-monospace, monospace';
         bgCtx.fillText(desc, VW / 2, 170);
-
-        if (tut.step === 2 && state.mode === 'defender' && DB.heldWeapon) {
-          const bx = DB.heldWeapon.x - camX, by = DB.heldWeapon.y - camY;
-          const ax = DB.heldWeapon.anchorX - camX, ay = DB.heldWeapon.anchorY - camY;
-          bgCtx.strokeStyle = '#ffcc00'; bgCtx.lineWidth = 2; bgCtx.setLineDash([5, 5]);
-          bgCtx.beginPath(); bgCtx.arc(ax, ay, 60, 0, Math.PI * 2); bgCtx.stroke();
-          bgCtx.fillStyle = '#ffcc00'; bgCtx.font = '12px monospace';
-          bgCtx.fillText('往圈外拉', ax, ay - 70);
-        }
       }
 
       // ===== 正常战斗的 HUD 逻辑 =====
@@ -587,7 +772,7 @@
 
       if (state.scene === 'title') { startGame(); return; }
       if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
-      if (state.tutorial.active && state.tutorial.step === 6) { backToTitle(); return; }
+      if (state.tutorial.active && state.tutorial.step === 8) { backToTitle(); return; }
 
       const p = toWorld(e.clientX, e.clientY);
       mouse.x = p.x; mouse.y = p.y; mouse.down = true;
@@ -608,7 +793,7 @@
     window.addEventListener('keydown', (e) => {
       if (state.scene === 'title') { startGame(); return; }
       if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
-      if (state.tutorial.active && state.tutorial.step === 6) { backToTitle(); return; }
+      if (state.tutorial.active && state.tutorial.step === 8) { backToTitle(); return; }
 
       const k = e.key.toLowerCase();
       if (k === 'w' || k === 'a' || k === 's' || k === 'd') { keys.add(k); e.preventDefault(); return; }
@@ -657,7 +842,7 @@
 
         if (state.scene === 'title') { startGame(); return; }
         if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
-        if (state.tutorial.active && state.tutorial.step === 6) { backToTitle(); return; }
+        if (state.tutorial.active && state.tutorial.step === 8) { backToTitle(); return; }
 
         if (aimTouchId === null) {
           const t = e.changedTouches[0];
@@ -710,10 +895,10 @@
           DB.enemyBullets.length = 0;
           for (const en of DB.enemies) {
             const blastDmg = 40 + (state.wave * 5) + (state.combo * 2);
-            en.hp -= blastDmg; en.flashT = 0.2; en.virus = true;
+            en.hp -= DB.applyVulnerable(en, blastDmg); en.flashT = 0.2; en.virus = true;
             DB.spawnParticles(en.x, en.y, 15, '#ffcc00', 400);
           }
-          if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= (40 + state.wave * 5); DB.boss.flashT = 0.2; }
+          if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= DB.applyVulnerable(DB.boss, 40 + state.wave * 5); DB.boss.flashT = 0.2; }
           state.skillCd = 6.0; state.flash = Math.max(state.flash, 0.4); state.shake = 25; state.hitstop = 0.1; DB.sfx.error();
         }
       }
@@ -759,7 +944,7 @@
   function update(dt) {
     if (dt <= 0) return;
     state.t += dt;
-    DB.updatePlayer(dt); DB.updateWeapons(dt); DB.updateEnemies(dt); DB.updateChips(dt); DB.updateParticles(dt); DB.updateTerminal(dt); updateWaves(dt);
+    DB.updatePlayer(dt); DB.updateWeapons(dt); DB.updateEnemies(dt); DB.updateZones(dt); DB.updateBeams(dt); DB.updateChips(dt); DB.updateParticles(dt); DB.updateTerminal(dt); updateWaves(dt);
 
     if (state.comboTimer > 0) {
       state.comboTimer -= dt; if (state.comboTimer <= 0) state.combo = 0;

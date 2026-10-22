@@ -50,7 +50,7 @@ window.DB = window.DB || {};
     light_dart:  { label: '💀 木马飞刀', w: 100, h: 34, r: 24, damage: 10 },
     stun_chip:   { label: '🧬 宏病毒',   w: 100, h: 34, r: 26, damage: 13 },
     fire_shield: { label: '☣️ 勒索炸弹', w: 116, h: 38, r: 28, damage: 19 },
-    link:        { label: '🕸️ 蠕虫牵引', w: 100, h: 34, r: 24, damage: 5,  effect: 'pull' },
+    link:        { label: '🕸️ 蠕虫牵引', w: 100, h: 34, r: 24, damage: 12,  effect: 'pull' },
     gravity:     { label: '☠️ 零日漏洞', w: 126, h: 42, r: 32, damage: 25, effect: 'earthquake' },
     blackhole:   { label: '🕳️ 断网协议', w: 116, h: 38, r: 28, damage: 15, effect: 'blackhole' }, // 新增
     chain:       { label: '🦠 病毒传染', w: 100, h: 34, r: 24, damage: 12, effect: 'chain' }, // 新增
@@ -58,18 +58,18 @@ window.DB = window.DB || {};
   };
 
 DB.ENEMY_CFG = {
-  droneHp: 120,     // 前期大概需要砸 3 下
-  wormHp: 180,      
-  shieldHp: 350,    
+  droneHp: 80,     // 前期大概需要砸 3 下
+  wormHp: 120,      
+  shieldHp: 200,    
   wormSpeed: 250,
-  chargerHp: 250,  
-  turretHp: 400,    
-  splitterHp: 200  
+  chargerHp: 160,  
+  turretHp: 240,    
+  splitterHp: 160  
 };
 
 DB.BOSS_CFG = {
-  smallHp: 1000,    // 第 5 波 Boss 大概 10 秒左右能打死
-  bigHp: 3000,      // 第 10 波 Boss
+  smallHp: 800,    // 第 5 波 Boss 大概 10 秒左右能打死
+  bigHp: 2400,      // 第 10 波 Boss
   radius: 80,
   fireInterval: 2.0,    
   summonInterval: 8.0  

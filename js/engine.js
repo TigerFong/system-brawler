@@ -128,7 +128,6 @@
     cardHack.addEventListener('click', (e) => { e.stopPropagation(); selectMode('hacker'); });
     rulesPanel.innerHTML = RULES_DEFENDER;
 
-    // ===== 新手教程按钮绑定 =====
     const btnTutDef = document.getElementById('btn-tut-def');
     const btnTutHack = document.getElementById('btn-tut-hack');
     if (btnTutDef) btnTutDef.addEventListener('click', (e) => { e.stopPropagation(); startTutorial('defender'); });
@@ -295,7 +294,6 @@
   function updateWaves(dt) {
     if (state.scene !== 'playing') return;
     
-    // 教程拦截
     if (state.tutorial.active) {
       updateTutorial(dt);
       return;
@@ -401,7 +399,125 @@
 
       // ===== 正常战斗的 HUD 逻辑 =====
       if (!state.tutorial.active) {
-        // (Boss血条、连击、大招提示等，全部直接沿用你原本的代码，无需删减)
+        const waveY = DB.boss ? 30 : 46;
+        if (DB.boss) {
+          const barW = 600, barH = 12; const barX = (VW - barW) / 2, barY = 46;
+          bgCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'; bgCtx.strokeStyle = 'rgba(255, 90, 122, 0.5)'; bgCtx.lineWidth = 1;
+          bgCtx.fillRect(barX, barY, barW, barH); bgCtx.strokeRect(barX, barY, barW, barH);
+          const hpRatio = Math.max(0, DB.boss.hp / DB.boss.maxHp);
+          let barColor = DB.boss.isBig ? '#ffaa00' : '#ff5a7a';
+          if (DB.boss.phase === 'paralyzed') barColor = '#ffcc00';
+          else if (DB.boss.enraged) barColor = (Math.sin(state.t * 20) > 0) ? '#ff2a4a' : '#ffcc00';
+          bgCtx.fillStyle = barColor; bgCtx.shadowColor = barColor; bgCtx.shadowBlur = 10;
+          bgCtx.fillRect(barX, barY, barW * hpRatio, barH); bgCtx.shadowBlur = 0;
+          bgCtx.font = 'bold 12px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
+          let bossName = 'UNKNOWN';
+          if (state.mode === 'hacker') {
+            if (DB.boss.bossType === 'bsod') bossName = '防火墙矩阵';
+            if (DB.boss.bossType === 'firewall') bossName = '查杀引擎主脑';
+            if (DB.boss.bossType === 'vampire') bossName = '隔离沙盒';
+            if (DB.boss.bossType === 'manager') bossName = '系统总控 (大Boss)';
+            if (DB.boss.bossType === 'trojan') bossName = '根权限守卫 (大Boss)';
+          } else {
+            if (DB.boss.bossType === 'bsod') bossName = '蓝屏死机核心';
+            if (DB.boss.bossType === 'firewall') bossName = '防火墙巨像';
+            if (DB.boss.bossType === 'vampire') bossName = '内存吸血鬼';
+            if (DB.boss.bossType === 'manager') bossName = '安全管家 (大Boss)';
+            if (DB.boss.bossType === 'trojan') bossName = '木马母体 (大Boss)';
+          }
+          if (DB.boss.phase === 'paralyzed') bossName = 'SYSTEM HALTED';
+          if (DB.boss.enraged && DB.boss.phase === 'normal') bossName += ' · 狂暴';
+          bgCtx.fillText(bossName, VW / 2, barY + 10);
+        }
+
+        if (state.combo > 1) {
+          bgCtx.save(); bgCtx.textAlign = 'left'; const scale = 1 + Math.min(0.5, state.combo * 0.02);
+          bgCtx.translate(30, 90); bgCtx.scale(scale, scale);
+          bgCtx.font = 'bold 32px ui-monospace, monospace'; bgCtx.fillStyle = '#ffcc00'; bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 15;
+          bgCtx.fillText(`${state.combo} COMBO`, 0, 0); bgCtx.restore();
+          bgCtx.save(); bgCtx.textAlign = 'left'; bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
+          bgCtx.fillText(`SCORE: ${state.score}`, 32, 115); bgCtx.restore();
+        }
+
+        if (state.waveBreakT > 0) {
+          bgCtx.textAlign = 'center'; bgCtx.font = '13px ui-monospace, monospace'; bgCtx.fillStyle = 'rgba(150, 200, 255, 0.45)'; bgCtx.shadowBlur = 0;
+          bgCtx.fillText(`NEXT WAVE IN ${Math.max(0, state.waveBreakT).toFixed(1)}s`, VW / 2, DB.boss ? 75 : 70);
+        }
+
+        if (state.qte.active) {
+          bgCtx.fillStyle = 'rgba(0, 0, 0, 0.85)'; bgCtx.fillRect(0, VH / 2 - 100, VW, 200);
+          bgCtx.strokeStyle = '#ff5a7a'; bgCtx.lineWidth = 2;
+          bgCtx.beginPath(); bgCtx.moveTo(0, VH / 2 - 100); bgCtx.lineTo(VW, VH / 2 - 100); bgCtx.stroke();
+          bgCtx.beginPath(); bgCtx.moveTo(0, VH / 2 + 100); bgCtx.lineTo(VW, VH / 2 + 100); bgCtx.stroke();
+          bgCtx.textAlign = 'center'; bgCtx.font = 'bold 20px ui-monospace, monospace'; bgCtx.fillStyle = '#ff5a7a'; bgCtx.shadowColor = '#ff5a7a'; bgCtx.shadowBlur = 20;
+          bgCtx.fillText('⚠ 核心瘫痪 · 输入覆盖指令 ⚠', VW / 2, VH / 2 - 40);
+          bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff'; bgCtx.shadowBlur = 0;
+          bgCtx.fillText(`剩余时间: ${state.qte.timer.toFixed(1)}s`, VW / 2, VH / 2 + 50);
+          bgCtx.font = 'bold 56px ui-monospace, monospace';
+          const seq = state.qte.sequence, spacing = 70, totalW = seq.length * spacing, startX = VW / 2 - totalW / 2 + spacing / 2;
+          for (let i = 0; i < seq.length; i++) {
+            const char = seq[i]; let color = '#5ae8ff';
+            if (i < state.qte.inputIndex) color = '#5ee6a8';
+            else if (i === state.qte.inputIndex) { color = '#ffcc00'; if (Math.sin(state.t * 30) > 0) color = '#ffffff'; }
+            bgCtx.shadowColor = color; bgCtx.shadowBlur = 20; bgCtx.fillStyle = color;
+            bgCtx.fillText(char, startX + i * spacing, VH / 2 + 15);
+          }
+          bgCtx.shadowBlur = 0;
+          bgCtx.fillStyle = 'rgba(255, 255, 255, 0.2)'; bgCtx.fillRect(VW / 2 - 150, VH / 2 + 30, 300, 4);
+          bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillRect(VW / 2 - 150, VH / 2 + 30, 300 * (state.qte.inputIndex / seq.length), 4);
+        }
+
+        if (!state.qte.active) {
+          bgCtx.save(); bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'right'; bgCtx.fillStyle = 'rgba(150, 200, 255, 0.6)';
+          if (state.mode === 'hacker') {
+            bgCtx.fillText('[4] 万剑归宗', VW - 26, VH - 105); bgCtx.fillText('[3] 紧急重启', VW - 26, VH - 120);
+            bgCtx.fillText('[2] 冻结协议', VW - 26, VH - 135); bgCtx.fillText('[1] 逻辑炸弹', VW - 26, VH - 150);
+          } else {
+            bgCtx.fillText('[4] 核心熔毁', VW - 26, VH - 105); bgCtx.fillText('[3] 系统重载', VW - 26, VH - 120);
+            bgCtx.fillText('[2] 时间凝滞', VW - 26, VH - 135); bgCtx.fillText('[1] 代码暴雨', VW - 26, VH - 150);
+          }
+          bgCtx.restore();
+        }
+
+        bgCtx.textAlign = 'left';
+        bgCtx.font = 'bold 12px ui-monospace, monospace';
+        bgCtx.shadowBlur = 0;
+        const isDef = state.mode === 'defender';
+        const skillName = isDef ? '[SHIFT] 全息反射盾' : '[SHIFT] 病毒引爆';
+        const cdText = state.skillCd <= 0 ? 'READY' : state.skillCd.toFixed(1) + 's';
+        const cdColor = state.skillCd <= 0 ? (isDef ? '#5ae8ff' : '#ffcc00') : 'rgba(150, 150, 150, 0.6)';
+        bgCtx.fillStyle = cdColor;
+        bgCtx.fillText(`${skillName}  -  ${cdText}`, 24, VH - 24);
+
+        const mods = state.mods;
+        if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0) {
+          bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
+          let yy = 30;
+          if (mods.damage > 0)    { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 16; }
+          if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 16; }
+          if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 16; }
+          if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 16; }
+          if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 16; }
+          const rawCritRate = 15 + Math.round((mods.critRate || 0) * 100);
+          const totalCritRate = Math.min(80, rawCritRate);
+          const isCritMax = rawCritRate >= 80 ? ' (MAX)' : '';
+          const totalCritDmg = 150 + Math.round((mods.critDmg || 0) * 100) + ((DB.upgrades.crit || 0) * 10);
+          bgCtx.fillStyle = isCritMax ? '#ff7a9a' : '#ffcc00';
+          bgCtx.fillText(`CRIT ${totalCritRate}%${isCritMax} / +${totalCritDmg}%`, 24, yy);
+        }
+
+        if (state.bossEnrageTextT > 0) {
+          const t = state.bossEnrageTextT;
+          const alpha = Math.min(1, t / 0.6);
+          const pulse = 1 + Math.sin(state.t * 22) * 0.06;
+          bgCtx.save();
+          bgCtx.globalAlpha = alpha; bgCtx.textAlign = 'center';
+          bgCtx.font = 'bold 46px ui-monospace, monospace';
+          bgCtx.fillStyle = '#ff2a4a'; bgCtx.shadowColor = '#ff2a4a'; bgCtx.shadowBlur = 30;
+          bgCtx.translate(VW / 2, VH / 2 - 120); bgCtx.scale(pulse, pulse);
+          bgCtx.fillText('⚠ BOSS 狂暴化 ⚠', 0, 0);
+          bgCtx.restore();
+        }
       }
 
       bgCtx.restore();
@@ -503,7 +619,86 @@
 
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     if (isMobile) {
-      // 沿用原移动端绑定逻辑
+      document.getElementById('mobile-ui').style.display = 'block';
+      const joyZone = document.getElementById('joy-zone');
+      const joyStick = document.getElementById('joy-stick');
+      let joyTouchId = null;
+      let joyCenterX = 0, joyCenterY = 0;
+      let aimTouchId = null;
+
+      function handleJoyMove(cx, cy) {
+        let dx = cx - joyCenterX;
+        let dy = cy - joyCenterY;
+        const dist = Math.hypot(dx, dy);
+        const maxDist = 40;
+        if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
+        joyStick.style.transform = `translate(${dx}px, ${dy}px)`;
+
+        keys.clear();
+        if (dx < -10) keys.add('a');
+        if (dx > 10) keys.add('d');
+        if (dy < -10) keys.add('w');
+        if (dy > 10) keys.add('s');
+      }
+
+      joyZone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        joyTouchId = t.identifier;
+        const rect = joyZone.getBoundingClientRect();
+        joyCenterX = rect.left + rect.width / 2;
+        joyCenterY = rect.top + rect.height / 2;
+        handleJoyMove(t.clientX, t.clientY);
+      });
+
+      window.addEventListener('touchstart', (e) => {
+        if (e.target.closest('#action-zone') || e.target.closest('#qte-zone') || e.target.closest('#joy-zone')) return;
+        if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn')) return;
+
+        if (state.scene === 'title') { startGame(); return; }
+        if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
+        if (state.tutorial.active && state.tutorial.step === 6) { backToTitle(); return; }
+
+        if (aimTouchId === null) {
+          const t = e.changedTouches[0];
+          aimTouchId = t.identifier;
+          const p = toWorld(t.clientX, t.clientY);
+          mouse.x = p.x; mouse.y = p.y; mouse.down = true;
+          trail.length = 0; trail.push({ x: p.x, y: p.y, t: performance.now() });
+          DB.tryGrab(p.x, p.y);
+        }
+      }, { passive: false });
+
+      window.addEventListener('touchmove', (e) => {
+        if (aimTouchId !== null || joyTouchId !== null) {
+          e.preventDefault();
+        }
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === joyTouchId) {
+            handleJoyMove(t.clientX, t.clientY);
+          } else if (t.identifier === aimTouchId) {
+            const p = toWorld(t.clientX, t.clientY);
+            mouse.x = p.x; mouse.y = p.y;
+            trail.push({ x: p.x, y: p.y, t: performance.now() }); while (trail.length > 14) trail.shift();
+          }
+        }
+      }, { passive: false });
+
+      window.addEventListener('touchend', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === joyTouchId) {
+            joyTouchId = null; joyStick.style.transform = `translate(0px, 0px)`; keys.clear();
+          } else if (t.identifier === aimTouchId) {
+            aimTouchId = null; mouse.down = false; DB.releaseThrow();
+          }
+        }
+      });
+
+      setInterval(() => {
+        document.getElementById('qte-zone').style.display = state.qte.active ? 'flex' : 'none';
+      }, 100);
     }
 
     DB.triggerShift = function() {
@@ -533,7 +728,16 @@
             state.qte.active = false; DB.boss = null;
             state.bossEnrageTextT = 0; state.bossEnrageFlash = 0;
             state.flash = 1.0; state.shake = 40; state.hitstop = 0.2;
-            // ...
+            for (let i = 0; i < 120; i++) {
+              DB.particles.push({ x: W/2 + (Math.random()-0.5)*600, y: 100 + Math.random()*500, vx: (Math.random()-0.5)*100, vy: 300 + Math.random()*500, life: 1.5, maxLife: 1.5, size: 4 + Math.random()*6, color: '#5ee6a8', spin: 0, rot: 0 });
+            }
+            state.hp = state.hpMax; state.energy = state.energyMax;
+            for (let i = 0; i < 15; i++) {
+              const angle = (i / 15) * Math.PI * 2; const dist = 100 + Math.random() * 150;
+              DB.spawnChip(DB.player.x + Math.cos(angle) * dist, DB.player.y + Math.sin(angle) * dist);
+            }
+            for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('fire_shield'); if (w) w.warning = 0.001; }
+            DB.sfx.clear(); state.waveBreakT = 4.0;
           }
         } else {
           state.qte.inputIndex = 0; state.qte.timer -= 1.0; state.damageFlash = 0.4; state.shake = 20; DB.sfx.error();

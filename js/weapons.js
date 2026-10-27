@@ -235,43 +235,97 @@
           break;
         }
         case 'gravity': {
+          // ☠️ 零日漏洞：核弹级链式裂变
           const hit = DB.hitscanShot(p.x, p.y, angle, range, w);
-          // 命中点或鼠标位置
           const tx = hit ? hit.x : DB.clamp(mouse.x, 40, W - 40);
           const ty = hit ? hit.y : DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
           
-          const blastDmg = w.baseDamage * 4; // 巨额伤害
-          const blastR = 300; // 大范围 AOE
+          // 【史诗级加强】：基础伤害翻了数倍，并加入随波次成长的固伤，拒绝后期刮痧
+          const baseExplosionDmg = (w.baseDamage * 4) + (state.wave * 150); 
+          let hitSet = new Set();
+          
+          const doExplode = (cx, cy, dmg, depth) => {
+            // 1. 极度夸张的爆炸视觉
+            state.shake = Math.max(state.shake, 35);
+            state.hitstop = Math.max(state.hitstop, 0.08);
+            state.flash = Math.max(state.flash, 0.15); // 全屏白闪
+            DB.sfx.error();
+            
+            DB.spawnParticles(cx, cy, 60, '#ffcc00', 1200);
+            DB.spawnParticles(cx, cy, 40, '#ffffff', 1500);
+            
+            // 巨大的冲击波环
+            for (let i = 0; i < 40; i++) {
+              const a = (i / 40) * Math.PI * 2;
+              DB.particles.push({ x: cx, y: cy, vx: Math.cos(a) * 1500, vy: Math.sin(a) * 1500, life: 0.6, maxLife: 0.6, size: 8, color: '#ffaa00', spin: 0, rot: a });
+            }
 
-          // 范围判定
-          for (const e of DB.enemies) {
-            if (Math.hypot(e.x - tx, e.y - ty) < blastR) {
-              e.hp -= DB.applyVulnerable(e, blastDmg);
-              e.flashT = 0.25;
-              e.vulnerable = Math.max(e.vulnerable || 0, 3); // 附加易伤
+            // 2. 超大范围判定（半径 500，基本覆盖大半个屏幕）
+            for (const e of DB.enemies) {
+              if (e.dead || hitSet.has(e)) continue;
+              if (Math.hypot(e.x - cx, e.y - cy) < 500) {
+                const finalDmg = DB.applyVulnerable(e, dmg);
+                e.hp -= finalDmg;
+                e.flashT = 0.3;
+                e.vulnerable = Math.max(e.vulnerable || 0, 5); // 易伤挂满
+                e.slowT = Math.max(e.slowT || 0, 4);
+                hitSet.add(e);
+                
+                // 伤害飘字（确认打到了）
+                if (DB.floaters) DB.floaters.push({ text: `-${Math.round(finalDmg)}`, x: e.x, y: e.y - 20, vy: -60, life: 0.8, maxLife: 0.8, color: '#ffaa00' });
+
+                // 连锁闪电连线
+                for (let k = 0; k < 10; k++) {
+                  const t = k / 10;
+                  DB.particles.push({ 
+                    x: cx + (e.x - cx) * t + (Math.random()-0.5)*30, 
+                    y: cy + (e.y - cy) * t + (Math.random()-0.5)*30, 
+                    vx: 0, vy: 0, life: 0.3, maxLife: 0.3, size: 6, color: '#ffffff', spin: 0, rot: 0 
+                  });
+                }
+
+                // 递归裂变（最多炸 10 次，伤害微幅衰减）
+                if (depth < 10) {
+                  setTimeout(() => {
+                    if (state.scene === 'playing' && !e.dead) doExplode(e.x, e.y, dmg * 0.9, depth + 1);
+                  }, 120);
+                }
+              }
             }
-          }
-          if (DB.boss && DB.boss.phase === 'normal') {
-            if (Math.hypot(DB.boss.x - tx, DB.boss.y - ty) < blastR) {
-              DB.boss.hp -= DB.applyVulnerable(DB.boss, blastDmg);
-              DB.boss.flashT = 0.25;
+
+            // 3. Boss 专项判定（Boss 也会被连锁炸到）
+            if (DB.boss && DB.boss.phase === 'normal') {
+              if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 500) {
+                const bDmg = DB.applyVulnerable(DB.boss, dmg * (depth === 0 ? 2 : 0.5)); // 第一发对 Boss 造成双倍伤害
+                DB.boss.hp -= bDmg;
+                DB.boss.flashT = 0.3;
+                if (DB.floaters) DB.floaters.push({ text: `-${Math.round(bDmg)}`, x: DB.boss.x, y: DB.boss.y - 40, vy: -60, life: 0.8, maxLife: 0.8, color: '#ffaa00', isCrit: true });
+              }
             }
-          }
+          };
           
-          // 视觉爆发
-          DB.spawnParticles(tx, ty, 50, '#ffaa00', 800);
-          DB.spawnParticles(tx, ty, 30, '#ffffff', 1000);
-          if (DB.floaters) DB.floaters.push({ text: '☠️ 漏洞引爆!', x: tx, y: ty - 30, vy: -60, life: 1, maxLife: 1, color: '#ffaa00', isCrit: true });
+          if (DB.floaters) DB.floaters.push({ text: '☠️ 零日引爆!', x: tx, y: ty - 30, vy: -60, life: 1, maxLife: 1, color: '#ffaa00', isCrit: true });
           
-          state.shake = Math.max(state.shake, 25);
-          DB.sfx.error();
+          // 触发第一层核爆
+          doExplode(tx, ty, baseExplosionDmg, 0);
+          
           DB.removeWeapon(w);
           break;
         }
         case 'blackhole': {
-          for (let i = -2; i <= 2; i++) {
-            DB.hitscanShot(p.x, p.y, angle + i * 0.15, range, w);
-          }
+          // 🕳️ 断网协议：绝对静默黑洞
+          const hit = DB.hitscanShot(p.x, p.y, angle, range, w);
+          const tx = hit ? hit.x : DB.clamp(mouse.x, 40, W - 40);
+          const ty = hit ? hit.y : DB.clamp(mouse.y, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 10);
+          
+          // 生成黑洞区域，半径大，吸力极强，持续 3.5 秒
+          DB.spawnZone({ kind: 'hackhole', x: tx, y: ty, r: 320, life: 3.5, dmg: w.baseDamage * 0.6, tickInterval: 0.4, pull: 500, color: '#c08bff' });
+          
+          if (DB.floaters) DB.floaters.push({ text: '🕳️ 断网坍塌', x: tx, y: ty - 30, vy: -60, life: 1, maxLife: 1, color: '#c08bff', isCrit: true });
+          state.shake = Math.max(state.shake, 20);
+          DB.sfx.error();
+          DB.spawnParticles(tx, ty, 40, '#c08bff', 500);
+          
           DB.removeWeapon(w);
           break;
         }
@@ -564,8 +618,27 @@
               });
             }
           } else {
-            w.homing = false;
-            w.homingTarget = null;
+            // 【修复】：当前目标死亡后，自动寻找下一个猎物
+            let nextTarget = null;
+            let minDist = Infinity;
+            for (const e of DB.enemies) {
+              if (e.dead || e.hp <= 0) continue;
+              const d = Math.hypot(w.x - e.x, w.y - e.y);
+              if (d < minDist) { minDist = d; nextTarget = e; }
+            }
+            if (!nextTarget && DB.boss && DB.boss.phase === 'normal') nextTarget = DB.boss;
+            
+            if (nextTarget) {
+              w.homingTarget = nextTarget;
+            } else {
+              // 场上彻底没怪了，飞向鼠标位置自毁
+              w.homing = false;
+              w.homingTarget = null;
+              const dx = DB.mouse.x - w.x, dy = DB.mouse.y - w.y;
+              const len = Math.hypot(dx, dy) || 1;
+              w.vx = (dx / len) * 1500;
+              w.vy = (dy / len) * 1500;
+            }
           }
         }
 
@@ -947,6 +1020,20 @@
             e.x += (dx / d) * k;
             e.y += (dy / d) * k;
             if (e.type === 'drone') { e.baseX += (dx / d) * k; e.baseY += (dy / d) * k; }
+            // 黑洞内强制断网（禁火）
+            e.silenced = Math.max(e.silenced || 0, 0.2);
+            e.slowT = Math.max(e.slowT || 0, 0.2);
+          }
+        }
+        // 对 Boss 也生效
+        if (z.kind === 'hackhole' && DB.boss && DB.boss.phase === 'normal') {
+          const dx = z.x - DB.boss.x, dy = z.y - DB.boss.y;
+          const d = Math.max(1, Math.hypot(dx, dy));
+          if (d < z.r) {
+            const k = z.pull * 0.2 * (1 - d / z.r) * dt;
+            DB.boss.x += (dx / d) * k;
+            DB.boss.y += (dy / d) * k;
+            DB.boss.silenced = Math.max(DB.boss.silenced || 0, 0.2);
           }
         }
       }

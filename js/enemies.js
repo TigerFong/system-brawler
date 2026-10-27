@@ -8,7 +8,7 @@
 
   DB.GROWTH = {
     // 【极限指数】1.80。第 10 波 198 倍，第 15 波 2900 倍，第 20 波 4.2 万倍！
-    hpExponent:           1.80,   
+    hpExponent:           1.75,   
     // 伤害增长拉高，后期只要被碰一下直接大残
     dmgExponent:          1.25,   
     
@@ -524,6 +524,7 @@
         DB.spawnParticles(b.x, b.y, 15, '#ffffff', 750);
       }
 
+      if (b.silenced > 0) b.silenced -= dt;
       if (b.frozen > 0) {
         b.frozen -= dt;
       } else if (b.phase === 'normal') {
@@ -541,7 +542,7 @@
         const enCnt = enrage ? 1.15 : 1;
         const enRate = enrage ? 0.75 : 1;
 
-        if (b.fireCd <= 0) {
+        if (b.fireCd <= 0 && !(b.silenced > 0)) {
           if (b.bossType === 'bsod') {
             b.fireCd = DB.BOSS_CFG.fireInterval / speedScale * enRate;
             const count = Math.floor((8 + Math.floor(state.wave / G.bossBulletDivDefault)) * enCnt);
@@ -1171,6 +1172,99 @@
         if (e && e.type !== 'dummy') e.vulnerable = Math.max(e.vulnerable || 0, 3);
         if (b) b.vulnerable = Math.max(b.vulnerable || 0, 3);
         break;
+    }
+  };
+
+  DB.spawnLevelWave = function (lv) {
+    DB.enemies.length = 0;
+    DB.enemyBullets.length = 0;
+    DB.boss = null;
+    const p = DB.player;
+    const hpScale = 1 + (lv - 1) * 0.35; // 每关怪物血量 +35%
+
+    function spawn(type, xOffset, yOffset, customHp, extra = {}) {
+      const defs = {
+        drone:    { hp: 120, r: 20, dmg: 10 },
+        worm:     { hp: 180, r: 22, dmg: 18, speed: 250 },
+        shield:   { hp: 350, r: 28, dmg: 22, speed: 60 },
+        turret:   { hp: 400, r: 26, dmg: 15 },
+        charger:  { hp: 250, r: 24, dmg: 28 },
+        splitter: { hp: 200, r: 26, dmg: 15 }
+      };
+      const d = defs[type];
+      const baseX = p.x + xOffset;
+      const baseY = p.y + yOffset;
+      
+      let e = { type, x: baseX, y: baseY, seed: Math.random() * 100, flashT: 0, frozen: 0, isNew: true, ...extra };
+      if (type === 'drone') { e.baseX = baseX; e.baseY = baseY; e.fireCd = 1 + Math.random(); }
+      if (type === 'turret') { e.angle = 0; e.fireCd = 1 + Math.random(); }
+      if (type === 'charger') { e.state = 'approach'; e.stateT = 0; e.dashDirX = 0; e.dashDirY = 0; }
+      if (type === 'splitter') { e.isMini = false; }
+      if (type === 'shield') { e.vx = 0; e.facing = -1; }
+      if (type === 'worm') { e.vx = 0; e.phase = Math.random() * Math.PI * 2; }
+
+      e.hp = Math.floor((customHp || d.hp) * hpScale);
+      e.maxHp = e.hp;
+      e.r = d.r;
+      e.dmg = Math.floor(d.dmg * (1 + lv * 0.1));
+      if (d.speed) e.speed = d.speed;
+
+      DB.enemies.push(e);
+    }
+
+    // 根据关卡生成不同敌人
+    if (lv === 1) {
+      for (let i = 0; i < 4; i++) spawn('drone', 300 + i * 100, (Math.random()-0.5)*200);
+    } 
+    else if (lv === 2) {
+      for (let i = 0; i < 3; i++) spawn('drone', 300 + i * 80, -100 + Math.random()*200);
+      spawn('worm', 500, 0);
+      spawn('worm', 650, 0);
+    } 
+    else if (lv === 3) {
+      spawn('shield', 400, 0);
+      spawn('shield', 600, 0);
+      spawn('turret', 350, 0);
+      spawn('turret', 700, 0);
+    } 
+    else if (lv === 4) {
+      spawn('charger', 300, 0);
+      spawn('charger', 500, 100);
+      spawn('splitter', 600, -100);
+      spawn('drone', 450, -200);
+    } 
+    else if (lv === 5) {
+      DB.spawnBoss(false); // 小 Boss
+    } 
+    else if (lv === 6) {
+      for (let i = 0; i < 4; i++) spawn('drone', 300 + i * 60, (Math.random()-0.5)*300);
+      spawn('shield', 500, 0);
+      spawn('worm', 700, 0);
+      spawn('charger', 400, 0);
+    } 
+    else if (lv === 7) {
+      spawn('turret', 300, 0);
+      spawn('turret', 450, 0);
+      spawn('turret', 600, 0);
+      spawn('splitter', 350, -150);
+      spawn('splitter', 550, 150);
+    } 
+    else if (lv === 8) {
+      spawn('shield', 400, 0);
+      spawn('charger', 600, 0);
+      spawn('worm', 300, 0);
+      spawn('worm', 700, 0);
+      for(let i=0; i<3; i++) spawn('drone', 450 + i*50, -200);
+    } 
+    else if (lv === 9) {
+      // 弹幕地狱
+      spawn('turret', 300, 0);
+      spawn('turret', 500, 0);
+      spawn('turret', 700, 0);
+      for (let i = 0; i < 6; i++) spawn('drone', 350 + i * 60, -100);
+    } 
+    else if (lv === 10) {
+      DB.spawnBoss(true); // 大 Boss
     }
   };
 

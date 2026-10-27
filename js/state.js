@@ -22,11 +22,15 @@
     // ===== 【新增】新手教程状态 =====
     tutorial: {
       active: false,
-      step: 0,        // 当前步骤
-      startX: 0, startY: 0, // 记录玩家初始位置用于检测移动
-      pullDist: 0,    // 记录拉弓距离
-      hitDummy: false // 记录是否命中木桩
-    }
+      step: 0,
+      startX: 0, startY: 0,
+      pullDist: 0,
+      hitDummy: false
+    }, // <-- tutorial 在这里结束
+
+    gameMode: 'endless',
+    currentLevel: 1,
+    levelClearT: 0
   };
 
   DB.player = {

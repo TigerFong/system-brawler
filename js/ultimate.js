@@ -183,11 +183,23 @@
           w.held = false;
 
           let target = null; let minDist = Infinity;
+          const aimX = DB.mouse.x, aimY = DB.mouse.y; // 以鼠标为准
           for (const e of DB.enemies) {
-            const d = Math.hypot(w.x - e.x, w.y - e.y);
+            const d = Math.hypot(e.x - aimX, e.y - aimY);
             if (d < minDist) { minDist = d; target = e; }
           }
           if (!target && DB.boss && DB.boss.phase === 'normal') target = DB.boss;
+          
+          // 如果场上没怪也没 Boss，就朝着鼠标方向飞出去
+          if (!target) {
+            w.thrown = true;
+            w.homing = false;
+            const dx = aimX - w.x, dy = aimY - w.y, len = Math.hypot(dx, dy) || 1;
+            w.vx = (dx / len) * 1500;
+            w.vy = (dy / len) * 1500;
+            w.age = 0;
+            continue;
+          }
 
           if (target) {
             w.thrown = true;

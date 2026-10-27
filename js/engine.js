@@ -274,12 +274,14 @@
 
   /* ==================== 结算蓝屏 ==================== */
   let gameOverEl = null;
-  function showGameOver() {
+  function showGameOver(isVictory = false) {
     if (gameOverEl) gameOverEl.remove();
     gameOverEl = document.createElement('div');
     gameOverEl.style.cssText = `position:absolute; inset:0; z-index:30; background:rgba(10, 20, 60, 0.95); display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:ui-monospace, monospace; color:#dff3ff; pointer-events:none; opacity:0; transition:opacity .35s ease; backdrop-filter: blur(4px);`;
     const face = document.createElement('div'); face.textContent = ':('; face.style.cssText = 'font-size:64px;font-weight:700;letter-spacing:8px;text-shadow:0 0 30px #7fd0ff; margin-bottom: 10px;';
-    const title = document.createElement('div'); title.textContent = 'SYSTEM INTEGRITY FAILURE'; title.style.cssText = 'font-size:18px;letter-spacing:4px;color:#9fd6ff; margin-bottom: 40px;';
+    const title = document.createElement('div'); 
+    title.textContent = isVictory ? 'MISSION COMPLETE' : 'SYSTEM INTEGRITY FAILURE'; 
+    title.style.cssText = `font-size:18px;letter-spacing:4px;color:${isVictory?'#ffcc00':'#9fd6ff'}; margin-bottom: 40px;`;
     const statsBox = document.createElement('div'); statsBox.style.cssText = `display: flex; flex-direction: column; gap: 16px; background: rgba(0, 0, 0, 0.4); padding: 24px 40px; border: 1px solid rgba(90, 240, 255, 0.2); border-radius: 8px; margin-bottom: 40px;`;
     const isNewRecord = state.score >= highestScore && state.score > 0;
     statsBox.innerHTML = `<div><span style="color:rgba(150,200,255,0.6);">本局得分</span> <span style="color:#ffcc00; font-size:24px; font-weight:bold; margin-left:40px;">${state.score}</span></div><div><span style="color:rgba(150,200,255,0.6);">最高连击</span> <span style="color:#5ae8ff; font-size:24px; font-weight:bold; margin-left:40px;">${state.maxCombo} <span style="font-size:14px;">HITS</span></span></div><div><span style="color:rgba(150,200,255,0.6);">历史最高</span> <span style="color:${isNewRecord?'#5ee6a8':'#ffffff'}; font-size:24px; font-weight:bold; margin-left:40px;">${highestScore} ${isNewRecord?'★ NEW':''}</span></div>`;
@@ -313,8 +315,26 @@
   }
 
   function startGame() {
-    hideTitle(); resetWorld(true); state.mode = currentMode; state.scene = 'playing'; DB.sfx.start();
+    hideTitle(); resetWorld(true); 
+    state.gameMode = 'endless'; // 确保进入无尽模式
+    state.mode = currentMode; 
+    state.scene = 'playing'; 
+    DB.sfx.start();
   }
+
+  window.startLevel = function(lv) {
+    hideTitle(); resetWorld(false);
+    state.mode = currentMode;
+    state.scene = 'playing';
+    state.gameMode = 'level';
+    state.currentLevel = lv;
+    state.levelClearT = 0;
+    
+    // 初始给 3 把武器，满血
+    for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
+    DB.spawnLevelWave(lv);
+    DB.sfx.start();
+  };
   function backToTitle() { 
     hideGameOver(); resetWorld(false); showTitle(); state.scene = 'title'; 
     setTimeout(() => { if (gameOverEl) { gameOverEl.remove(); gameOverEl = null; } }, 400);
@@ -427,12 +447,36 @@
   /* ==================== 波次 ==================== */
   function updateWaves(dt) {
     if (state.scene !== 'playing') return;
-    
-    if (state.tutorial.active) {
-      updateTutorial(dt);
+    if (state.tutorial.active) { updateTutorial(dt); return; }
+
+    // ===== 闯关模式逻辑 =====
+    if (state.gameMode === 'level') {
+      if (state.levelClearT > 0) {
+        state.levelClearT -= dt;
+        if (state.levelClearT <= 0) {
+          if (state.currentLevel >= 10) {
+            // 通关
+            state.scene = 'gameover';
+            showGameOver(true);
+          } else {
+            // 下一关
+            state.hp = Math.min(state.hpMax, state.hp + 30); // 每关回 30 血
+            for (let i = 0; i < 2; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; } // 补 2 把武器
+            window.startLevel(state.currentLevel + 1);
+          }
+        }
+        return;
+      }
+
+      if (DB.enemies.length === 0 && (!DB.boss || DB.boss.hp <= 0)) {
+        state.levelClearT = 3.0;
+        state.flash = 0.5;
+        DB.sfx.clear();
+      }
       return;
     }
 
+    // ===== 无尽模式逻辑 =====
     if (state.waveBreakT > 0) {
       state.waveBreakT -= dt;
       if (state.waveBreakT <= 0) {
@@ -492,7 +536,34 @@
       bgCtx.fillStyle = 'rgba(150, 200, 255, 0.55)'; bgCtx.shadowColor = 'rgba(90, 240, 255, 0.6)'; bgCtx.shadowBlur = 16;
 
       if (!state.tutorial.active) {
-        bgCtx.fillText(`WAVE ${String(state.wave).padStart(2, '0')}`, VW / 2, 46);
+        // ===== 关卡 UI =====
+        if (state.gameMode === 'level') {
+          bgCtx.fillStyle = '#ffcc00';
+          bgCtx.font = 'bold 20px ui-monospace, monospace';
+          bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 10;
+          bgCtx.fillText(`LEVEL ${state.currentLevel} / 10`, VW / 2, 46);
+
+          if (state.levelClearT > 0) {
+            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            bgCtx.fillRect(0, VH/2 - 60, VW, 120);
+            bgCtx.strokeStyle = '#5ee6a8'; bgCtx.lineWidth = 2;
+            bgCtx.strokeRect(0, VH/2 - 60, VW, 120);
+            
+            bgCtx.textAlign = 'center';
+            bgCtx.fillStyle = '#5ee6a8';
+            bgCtx.font = 'bold 36px ui-monospace, monospace';
+            bgCtx.shadowColor = '#5ee6a8'; bgCtx.shadowBlur = 20;
+            bgCtx.fillText(`LEVEL ${state.currentLevel} CLEARED`, VW/2, VH/2 + 5);
+            
+            bgCtx.fillStyle = '#ffffff';
+            bgCtx.font = '14px ui-monospace, monospace';
+            bgCtx.shadowBlur = 0;
+            bgCtx.fillText(state.currentLevel >= 10 ? '最终挑战完成，系统已安全！' : '准备进入下一关...', VW/2, VH/2 + 40);
+          }
+        } else {
+          // 只有无尽模式才画 WAVE
+          bgCtx.fillText(`WAVE ${String(state.wave).padStart(2, '0')}`, VW / 2, 46);
+        }
       }
 
       // ===== 教程悬浮 UI =====
@@ -770,7 +841,11 @@
       if (e.button !== 0) return;
       if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn')) { if (state.scene === 'title') return; }
 
-      if (state.scene === 'title') { startGame(); return; }
+      if (state.scene === 'title') {
+        // 如果是因为鼠标点开了关卡，不要用键盘直接开始无尽模式
+        if (e.key === 'Enter' || e.key === ' ') startGame(); 
+        return; 
+      }
       if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
       if (state.tutorial.active && state.tutorial.step === 8) { backToTitle(); return; }
 

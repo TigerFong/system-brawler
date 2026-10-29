@@ -12,8 +12,9 @@
   let highestScore = 0;
   let sysPoints = 0;
   let cloudToken = localStorage.getItem('sys_auth_token');
+  let currentUsername = localStorage.getItem('sys_auth_username') || ''; // 新增
   
-  // 部署后改成你的 Render 后端地址，例如 'https://your-app.onrender.com/api'
+  
   const API_BASE = 'http://localhost:3000/api';
 
   const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
@@ -307,7 +308,39 @@
     const btnLogin = document.getElementById('btn-login');
     
     if (btnLogin) {
+      // 每次刷新 UI 时，检查是否已登录
+      const updateLoginUI = () => {
+        if (currentUsername) {
+          btnLogin.textContent = `👤 ${currentUsername} (点击退出)`;
+          btnLogin.style.color = '#5ee6a8';
+          btnLogin.style.borderColor = 'rgba(94,230,168,0.8)';
+        } else {
+          btnLogin.textContent = `👤 账号登录`;
+          btnLogin.style.color = '#5ee6a8';
+          btnLogin.style.borderColor = 'rgba(94,230,168,0.4)';
+        }
+      };
+      updateLoginUI(); // 初始化时调用
+
       btnLogin.onclick = () => {
+        if (currentUsername) {
+          // 如果已登录，点击则执行退出
+          if (confirm('确定要退出当前账号吗？(云端存档不受影响)')) {
+            cloudToken = null;
+            currentUsername = '';
+            localStorage.removeItem('sys_auth_token');
+            localStorage.removeItem('sys_auth_username');
+            // 重置本地数据和UI
+            sysPoints = 0;
+            highestScore = 0;
+            DB.upgrades = { ...defaultUpgrades };
+            updateUpgradeUI();
+            updateLoginUI();
+          }
+          return;
+        }
+
+        // 未登录，打开弹窗
         authErr.textContent = '';
         document.getElementById('auth-user').value = '';
         document.getElementById('auth-pass').value = '';
@@ -333,15 +366,21 @@
 
           if (type === 'register') {
             authErr.style.color = '#5ee6a8';
-            authErr.textContent = "注册成功，请登录";
+            authErr.textContent = "注册成功，请点击登录";
             return;
           }
 
+          // 登录成功
           cloudToken = data.token;
+          currentUsername = u; // 记住用户名
           localStorage.setItem('sys_auth_token', cloudToken);
-          await syncDataFromCloud();
+          localStorage.setItem('sys_auth_username', currentUsername);
+          
+          await syncDataFromCloud(); // 拉取云端数据
+          
           authModal.style.display = 'none';
           updateUpgradeUI();
+          updateLoginUI(); // 更新按钮状态！
           DB.sfx.clear();
         } catch (e) {
           authErr.style.color = '#ff5a7a';
@@ -921,7 +960,7 @@
 
     dom.stage.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn')) { if (state.scene === 'title') return; }
+      if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn') || e.target.closest('#auth-modal')) { if (state.scene === 'title') return; }
 
       if (state.scene === 'title') {
         // 如果是因为鼠标点开了关卡，不要用键盘直接开始无尽模式
@@ -948,6 +987,9 @@
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     window.addEventListener('keydown', (e) => {
+      // 如果正在输入框打字，或者在登录弹窗里，不触发全局按键
+      if (e.target.tagName === 'INPUT' || (document.getElementById('auth-modal') && document.getElementById('auth-modal').style.display === 'flex')) return;
+
       if (state.scene === 'title') { startGame(); return; }
       if (state.scene === 'gameover') { if (state.gameOverLock <= 0) backToTitle(); return; }
       if (state.tutorial.active && state.tutorial.step === 8) { backToTitle(); return; }
@@ -1153,6 +1195,12 @@
     if (cloudToken) {
       syncDataFromCloud().then(() => {
         updateUpgradeUI();
+        // 如果你是刷新页面，重新绑定一下按钮状态
+        const btnLogin = document.getElementById('btn-login');
+        if (btnLogin && currentUsername) {
+           btnLogin.textContent = `👤 ${currentUsername} (点击退出)`;
+           btnLogin.style.borderColor = 'rgba(94,230,168,0.8)';
+        }
       });
     }
 

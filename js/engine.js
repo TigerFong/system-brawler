@@ -15,7 +15,7 @@
   let currentUsername = localStorage.getItem('sys_auth_username') || ''; // 新增
   
   
-  const API_BASE = 'http://localhost:3000/api';
+  const API_BASE = 'http://system-brawler-api.onrender.com/api';
 
   const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
   DB.upgrades = { ...defaultUpgrades };

@@ -9,12 +9,43 @@
   const VW    = CFG.VIEW_W;
   const VH    = CFG.VIEW_H;
 
-  let highestScore = parseInt(localStorage.getItem('sys_brawler_highscore') || '0', 10);
-  let sysPoints = parseInt(localStorage.getItem('sys_brawler_points') || '0', 10);
+  let highestScore = 0;
+  let sysPoints = 0;
+  let cloudToken = localStorage.getItem('sys_auth_token');
+  
+  // 部署后改成你的 Render 后端地址，例如 'https://your-app.onrender.com/api'
+  const API_BASE = 'http://localhost:3000/api';
 
   const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
-  let savedUpgrades = JSON.parse(localStorage.getItem('sys_brawler_upgrades') || '{}');
-  DB.upgrades = { ...defaultUpgrades, ...savedUpgrades };
+  DB.upgrades = { ...defaultUpgrades };
+
+  async function syncDataFromCloud() {
+    if (!cloudToken) return;
+    try {
+      const res = await fetch(`${API_BASE}/save`, { headers: { 'Authorization': `Bearer ${cloudToken}` } });
+      if (!res.ok) throw new Error('Token invalid');
+      const data = await res.json();
+      sysPoints = data.points;
+      highestScore = data.highscore;
+      DB.upgrades = data.upgrades;
+      localStorage.setItem('sys_auth_token', cloudToken);
+    } catch(e) {
+      console.log('登录失效', e);
+      cloudToken = null;
+      localStorage.removeItem('sys_auth_token');
+    }
+  }
+
+  async function saveDataToCloud() {
+    if (!cloudToken) return;
+    try {
+      await fetch(`${API_BASE}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cloudToken}` },
+        body: JSON.stringify({ points: sysPoints, upgrades: DB.upgrades, highscore: highestScore })
+      });
+    } catch(e) { console.error('云端保存失败', e); }
+  }
 
   /* ==================== 音效 ==================== */
   DB.sfx = (function () {
@@ -261,8 +292,7 @@
       const cost = getCost(type, DB.upgrades[type]);
       if (sysPoints >= cost && DB.upgrades[type] < maxLv) {
         sysPoints -= cost; DB.upgrades[type]++;
-        localStorage.setItem('sys_brawler_points', sysPoints.toString());
-        localStorage.setItem('sys_brawler_upgrades', JSON.stringify(DB.upgrades));
+        saveDataToCloud(); // 保存到云端
         DB.sfx.chip(); updateUpgradeUI();
       }
     }
@@ -270,6 +300,58 @@
     btnHp.onclick = () => buyUpgrade('hp', 99); btnEnergy.onclick = () => buyUpgrade('energy', 10); btnChip.onclick = () => buyUpgrade('chip', 30);
     btnWeapon.onclick = () => buyUpgrade('weapon', 10); btnDuration.onclick = () => buyUpgrade('duration', 10); btnDamage.onclick = () => buyUpgrade('damage', 20);
     btnCrit.onclick = () => buyUpgrade('crit', 20);
+
+    // ===== 账号登录逻辑 =====
+    const authModal = document.getElementById('auth-modal');
+    const authErr = document.getElementById('auth-error');
+    const btnLogin = document.getElementById('btn-login');
+    
+    if (btnLogin) {
+      btnLogin.onclick = () => {
+        authErr.textContent = '';
+        document.getElementById('auth-user').value = '';
+        document.getElementById('auth-pass').value = '';
+        authModal.style.display = 'flex';
+      };
+      document.getElementById('btn-close-auth').onclick = () => authModal.style.display = 'none';
+
+      async function doAuth(type) {
+        const u = document.getElementById('auth-user').value.trim();
+        const p = document.getElementById('auth-pass').value.trim();
+        if (!u || !p) { authErr.textContent = "账号密码不能为空"; authErr.style.color='#ff5a7a'; return; }
+        
+        authErr.textContent = "连接中...";
+        authErr.style.color = '#aaa';
+        try {
+          const res = await fetch(`${API_BASE}/${type}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: u, password: p })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+
+          if (type === 'register') {
+            authErr.style.color = '#5ee6a8';
+            authErr.textContent = "注册成功，请登录";
+            return;
+          }
+
+          cloudToken = data.token;
+          localStorage.setItem('sys_auth_token', cloudToken);
+          await syncDataFromCloud();
+          authModal.style.display = 'none';
+          updateUpgradeUI();
+          DB.sfx.clear();
+        } catch (e) {
+          authErr.style.color = '#ff5a7a';
+          authErr.textContent = e.message;
+        }
+      }
+
+      document.getElementById('btn-do-login').onclick = () => doAuth('login');
+      document.getElementById('btn-do-register').onclick = () => doAuth('register');
+    }
   }
 
   /* ==================== 结算蓝屏 ==================== */
@@ -1051,9 +1133,11 @@
     if (state.hp <= 0 && state.scene === 'playing') {
       state.scene = 'gameover'; state.gameOverLock = 0.6; state.hitstop = 0.12; state.shake = 30; DB.heldWeapon = null;
       state.bossEnrageTextT = 0; state.bossEnrageFlash = 0;
-      if (state.score > highestScore) { highestScore = state.score; localStorage.setItem('sys_brawler_highscore', highestScore.toString()); }
+      if (state.score > highestScore) { highestScore = state.score; }
       const earnedPoints = Math.floor(state.score / 10);
-      if (earnedPoints > 0) { sysPoints += earnedPoints; localStorage.setItem('sys_brawler_points', sysPoints.toString()); }
+      if (earnedPoints > 0) { sysPoints += earnedPoints; }
+      
+      saveDataToCloud(); // 数据变动，异步保存到云端
       showGameOver();
     }
 
@@ -1064,9 +1148,17 @@
 
   function init() {
     initBackground(); initVignette(); DB.buildHUD(); bindTitleEvents(); resetWorld(false); bindInput();
+    
+    // 尝试静默同步
+    if (cloudToken) {
+      syncDataFromCloud().then(() => {
+        updateUpgradeUI();
+      });
+    }
+
     state.scene = 'title'; showTitle();
     requestAnimationFrame((t) => { lastTime = t; requestAnimationFrame(frame); });
-  }
+  } 
 
   init();
 

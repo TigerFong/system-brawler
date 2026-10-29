@@ -124,6 +124,18 @@
       </div>
     </div>
 
+    <!-- 测试专用面板 (默认隐藏) -->
+    <div id="tester-panel" style="display: none; position: absolute; left: 20px; top: 20px; background: rgba(0,0,0,0.85); border: 1px solid #ffcc00; padding: 15px; border-radius: 8px; z-index: 100; box-shadow: 0 0 20px rgba(255,204,0,0.3);">
+      <h3 style="color: #ffcc00; margin-bottom: 10px; font-size: 14px; letter-spacing: 1px;">🛠️ 开发者测试面板</h3>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="upgrade-btn" id="test-add-pt" style="border-color: #5ee6a8; color: #5ee6a8; padding: 5px 10px;">+ 10000 积分</button>
+        <button class="upgrade-btn" id="test-sub-pt" style="border-color: #ff5a7a; color: #ff5a7a; padding: 5px 10px;">- 10000 积分</button>
+        <button class="upgrade-btn" id="test-max-up" style="border-color: #ffcc00; color: #ffcc00; padding: 5px 10px;">一键所有升级满级</button>
+        <button class="upgrade-btn" id="test-add-score" style="border-color: #c08bff; color: #c08bff; padding: 5px 10px;">最高分 +100000</button>
+        <button class="upgrade-btn" id="test-reset-all" style="border-color: #ff5a7a; color: #ff5a7a; padding: 5px 10px; margin-top: 10px;">☢️ 清空所有数据 (重置)</button>
+      </div>
+    </div>
+
     <!-- 闪屏特效 -->
     <div id="flash"></div>
   </div>

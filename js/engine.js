@@ -310,16 +310,62 @@
     if (btnLogin) {
       // 每次刷新 UI 时，检查是否已登录
       const updateLoginUI = () => {
+        const testerPanel = document.getElementById('tester-panel');
         if (currentUsername) {
           btnLogin.textContent = `👤 ${currentUsername} (点击退出)`;
           btnLogin.style.color = '#5ee6a8';
           btnLogin.style.borderColor = 'rgba(94,230,168,0.8)';
+          
+          // 如果是 tester 账号，显示测试面板
+          if (currentUsername === 'tester') {
+            testerPanel.style.display = 'block';
+          } else {
+            testerPanel.style.display = 'none';
+          }
         } else {
           btnLogin.textContent = `👤 账号登录`;
           btnLogin.style.color = '#5ee6a8';
           btnLogin.style.borderColor = 'rgba(94,230,168,0.4)';
+          testerPanel.style.display = 'none';
         }
       };
+      updateLoginUI(); // 初始化时调用
+
+      // ===== 绑定测试面板的按钮事件 =====
+      document.getElementById('test-add-pt').onclick = () => {
+        sysPoints += 10000;
+        saveDataToCloud();
+        updateUpgradeUI();
+      };
+      document.getElementById('test-sub-pt').onclick = () => {
+        sysPoints = Math.max(0, sysPoints - 10000);
+        saveDataToCloud();
+        updateUpgradeUI();
+      };
+      document.getElementById('test-max-up').onclick = () => {
+        sysPoints = 999999;
+        DB.upgrades = { hp:99, energy:10, chip:30, weapon:10, duration:10, damage:20, crit:20 };
+        saveDataToCloud();
+        updateUpgradeUI();
+      };
+      document.getElementById('test-add-score').onclick = () => {
+        highestScore += 100000;
+        saveDataToCloud();
+      };
+
+      document.getElementById('test-reset-all').onclick = () => {
+        if (confirm("确定要清空所有积分、最高分和升级等级吗？此操作不可逆！")) {
+          sysPoints = 0;
+          highestScore = 0;
+          DB.upgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
+          
+          saveDataToCloud(); // 立刻同步云端
+          updateUpgradeUI(); // 刷新界面
+          
+          alert("数据已成功重置！");
+        }
+      };
+
       updateLoginUI(); // 初始化时调用
 
       btnLogin.onclick = () => {

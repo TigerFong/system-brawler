@@ -15,6 +15,8 @@
 
     bossEnrageFlash: 0,   
     bossEnrageTextT: 0,   
+
+    isPaused: false,
     
     skillCd: 0,       
     skillActiveT: 0,
@@ -30,7 +32,10 @@
 
     gameMode: 'endless',
     currentLevel: 1,
-    levelClearT: 0
+    levelClearT: 0,
+    levelSubWave: 1,
+    levelTotalWaves: 3,
+    levelWaveBreakT: 0
   };
 
   DB.player = {

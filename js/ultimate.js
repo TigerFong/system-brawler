@@ -52,9 +52,36 @@
         DB.heldWeapon = null;
         for (const w of DB.weapons.slice()) DB.removeWeapon(w);
 
-        // 1) 每把武器在自身原位置触发专属爆炸
+        // ── 0) 开场：全场红光、慢动作定格、屏幕字幕 ──
+        state.shake = Math.max(state.shake, 28);
+        state.hitstop = Math.max(state.hitstop, 0.22);
+        state.flash = Math.max(state.flash, 0.5);
+        state.bossEnrageFlash = Math.max(state.bossEnrageFlash, 0.65);
+        DB.sfx.error();
+
+        if (DB.floaters) {
+          DB.floaters.push({
+            text: '⚠ CORE MELTDOWN ⚠',
+            x: DB.player.x, y: DB.player.y - 100,
+            vy: -30, life: 1.6, maxLife: 1.6,
+            color: '#ff2a4a', isCrit: true
+          });
+        }
+
+        // 玩家位置向外 80 道红色/金色能量环
+        for (let k = 0; k < 80; k++) {
+          const a = (k / 80) * Math.PI * 2;
+          DB.particles.push({
+            x: DB.player.x, y: DB.player.y,
+            vx: Math.cos(a) * 1300, vy: Math.sin(a) * 1300,
+            life: 0.7, maxLife: 0.7, size: 8,
+            color: k % 2 === 0 ? '#ff2a4a' : '#ffcc00',
+            spin: 0, rot: a
+          });
+        }
+
+        // ── 1) 每把武器在自身原位置触发专属爆炸 ──
         for (const s of sacrificeList) {
-          // 用 code_slash 的 baseDamage 巨大，这里压制，避免献祭一把光刃秒 Boss
           const localBase = Math.min(s.baseDamage, 40);
           const localDmg = localBase * 2 * totalDmgMult;
 
@@ -66,7 +93,6 @@
           } else if (s.type === 'chain') {
             DB.triggerChain(s.x, s.y, localDmg);
           } else {
-            // 普通武器：小范围 AOE
             for (const e of DB.enemies) {
               if (Math.hypot(e.x - s.x, e.y - s.y) < 160) {
                 e.hp -= DB.applyVulnerable(e, localDmg * 0.8);
@@ -81,20 +107,33 @@
             }
           }
 
-          DB.spawnParticles(s.x, s.y, 24, '#ffcc00', 600);
-          DB.spawnParticles(s.x, s.y, 12, '#ffffff', 800);
-          for (let k = 0; k < 12; k++) {
-            const a = Math.random() * Math.PI * 2;
-            const sp = 300 + Math.random() * 500;
+          // 【增强】三层粒子 + 水平冲击波 + 垂直火柱
+          DB.spawnParticles(s.x, s.y, 40, '#ffcc00', 800);
+          DB.spawnParticles(s.x, s.y, 24, '#ffffff', 1000);
+          DB.spawnParticles(s.x, s.y, 16, '#ff2a4a', 600);
+
+          for (let k = 0; k < 24; k++) {
+            const a = (k / 24) * Math.PI * 2;
             DB.particles.push({
               x: s.x, y: s.y,
-              vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-              life: 0.5, maxLife: 0.5, size: 4, color: '#ffcc00', spin: 0, rot: 0
+              vx: Math.cos(a) * 1000, vy: Math.sin(a) * 1000,
+              life: 0.5, maxLife: 0.5, size: 6,
+              color: '#ffaa00', spin: 0, rot: a
+            });
+          }
+          for (let k = 0; k < 12; k++) {
+            DB.particles.push({
+              x: s.x + (Math.random() - 0.5) * 30,
+              y: s.y,
+              vx: (Math.random() - 0.5) * 200,
+              vy: -400 - Math.random() * 400,
+              life: 0.8, maxLife: 0.8, size: 5,
+              color: '#ff7a3a', spin: 0, rot: 0
             });
           }
         }
 
-        // 2) 玩家位置中心大核爆（随献祭数量成长，带距离衰减）
+        // ── 2) 玩家位置中心大核爆 ──
         const coreDmg = (40 + sacrificeList.length * 30) * totalDmgMult;
         const cx = DB.player.x, cy = DB.player.y;
 
@@ -115,19 +154,58 @@
           DB.boss.flashT = 0.3;
         }
 
-        // 3) 视觉爆发
-        state.shake = Math.max(state.shake, 34);
-        state.flash = Math.max(state.flash, 0.7);
-        for (let i = 0; i < 80; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const sp = 400 + Math.random() * 800;
+        // ── 3) 强化视觉爆发（四重冲击波 + 火山喷发式粒子） ──
+        state.shake = Math.max(state.shake, 42);
+        state.flash = Math.max(state.flash, 0.95);
+        state.hitstop = Math.max(state.hitstop, 0.15);
+        state.damageFlash = Math.max(state.damageFlash, 0.6);
+
+        DB.spawnParticles(cx, cy, 120, '#ff2a4a', 1500);
+        DB.spawnParticles(cx, cy, 80,  '#ffcc00', 1300);
+        DB.spawnParticles(cx, cy, 50,  '#ffffff', 1800);
+
+        // 四重半径递增冲击波（白→金→橙→红）
+        const RING_COLORS = ['#ffffff', '#ffcc00', '#ff7a3a', '#ff2a4a'];
+        for (let ring = 0; ring < 4; ring++) {
+          const ringCount = 40 + ring * 10;
+          const ringSpeed = 800 + ring * 250;
+          for (let k = 0; k < ringCount; k++) {
+            const a = (k / ringCount) * Math.PI * 2;
+            DB.particles.push({
+              x: cx, y: cy,
+              vx: Math.cos(a) * ringSpeed,
+              vy: Math.sin(a) * ringSpeed,
+              life: 0.6 + ring * 0.1,
+              maxLife: 0.6 + ring * 0.1,
+              size: 8 - ring,
+              color: RING_COLORS[ring],
+              spin: 0, rot: a
+            });
+          }
+        }
+
+        // 火山喷发：大量垂直上冲的火焰
+        for (let k = 0; k < 40; k++) {
           DB.particles.push({
-            x: cx, y: cy,
-            vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-            life: 0.8, maxLife: 0.8, size: 5, color: '#ffcc00', spin: 0, rot: 0
+            x: cx + (Math.random() - 0.5) * 200,
+            y: cy,
+            vx: (Math.random() - 0.5) * 300,
+            vy: -600 - Math.random() * 600,
+            life: 1.2, maxLife: 1.2,
+            size: 4 + Math.random() * 8,
+            color: k % 3 === 0 ? '#ffffff' : (k % 3 === 1 ? '#ffcc00' : '#ff2a4a'),
+            spin: 0, rot: 0
           });
         }
-        DB.spawnParticles(cx, cy, 40, '#ffffff', 900);
+
+        if (DB.floaters) {
+          DB.floaters.push({
+            text: '💥 核心熔毁！',
+            x: cx, y: cy - 140,
+            vy: -50, life: 1.6, maxLife: 1.6,
+            color: '#ffcc00', isCrit: true
+          });
+        }
       }
     }
     else {

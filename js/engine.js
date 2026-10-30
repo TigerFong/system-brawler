@@ -11,41 +11,112 @@
 
   let highestScore = 0;
   let sysPoints = 0;
+  let maxLevel = parseInt(localStorage.getItem('sys_max_level') || '1', 10);
   let cloudToken = localStorage.getItem('sys_auth_token');
   let currentUsername = localStorage.getItem('sys_auth_username') || ''; // 新增
-  
+  let loadingTimer = null;
+  let loadingSec = 0;
+
+  function showLoading(text = '正在连接云端服务器...') {
+    loadingSec = 0;
+    const overlay = document.getElementById('loading-overlay');
+    const sub = document.getElementById('loading-sub');
+    document.getElementById('loading-text').textContent = text;
+    sub.textContent = '首次启动可能需要 30-50 秒唤醒，请耐心等待';
+    overlay.style.display = 'flex';
+
+    clearInterval(loadingTimer);
+    loadingTimer = setInterval(() => {
+      loadingSec++;
+      if (loadingSec > 5) {
+        sub.textContent = `已等待 ${loadingSec} 秒...服务器可能正在唤醒中`;
+        sub.style.color = '#ffaa00'; // 超时变黄提醒
+      }
+      if (loadingSec > 20) {
+        sub.textContent = `已等待 ${loadingSec} 秒...请检查网络或稍后重试`;
+        sub.style.color = '#ff5a7a'; // 超时变红警告
+      }
+    }, 1000);
+  }
+
+  function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
+    clearInterval(loadingTimer);
+  }
   
   const API_BASE = 'https://system-brawler-api.onrender.com/api';
 
   const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
   DB.upgrades = { ...defaultUpgrades };
 
+  // 通用 Fetch 超时封装
+  async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 60000 } = options; // 默认最多等 60 秒
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(resource, { ...options, signal: controller.signal });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  }
+
   async function syncDataFromCloud() {
     if (!cloudToken) return;
+    showLoading('正在读取云端存档...');
     try {
-      const res = await fetch(`${API_BASE}/save`, { headers: { 'Authorization': `Bearer ${cloudToken}` } });
+      // 替换原来的 fetch 为 fetchWithTimeout
+      const res = await fetchWithTimeout(`${API_BASE}/save`, { 
+        headers: { 'Authorization': `Bearer ${cloudToken}` },
+        timeout: 60000 
+      });
       if (!res.ok) throw new Error('Token invalid');
       const data = await res.json();
       sysPoints = data.points;
       highestScore = data.highscore;
       DB.upgrades = data.upgrades;
+      // 兼容后端返回的 maxlevel
+      if (data.maxlevel && data.maxlevel > maxLevel) {
+        maxLevel = data.maxlevel;
+        localStorage.setItem('sys_max_level', maxLevel);
+      }
       localStorage.setItem('sys_auth_token', cloudToken);
     } catch(e) {
-      console.log('登录失效', e);
-      cloudToken = null;
-      localStorage.removeItem('sys_auth_token');
+      console.log('同步失败', e);
+      if (e.name === 'AbortError') {
+        alert('云端连接超时，请检查网络。当前将使用本地离线数据游玩。');
+      } else {
+        // 如果 Token 过期或无效，才清除 token
+        // cloudToken = null;
+        // localStorage.removeItem('sys_auth_token');
+      }
+    } finally {
+      hideLoading();
     }
   }
 
   async function saveDataToCloud() {
-    if (!cloudToken) return;
+    if (!cloudToken) return; // 没登录直接返回，靠本地 localStorage 存
     try {
       await fetch(`${API_BASE}/save`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cloudToken}` },
-        body: JSON.stringify({ points: sysPoints, upgrades: DB.upgrades, highscore: highestScore })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cloudToken}` 
+        },
+        body: JSON.stringify({ 
+          points: sysPoints, 
+          upgrades: DB.upgrades, 
+          highscore: highestScore, 
+          maxlevel: maxLevel // 传关卡进度
+        })
       });
-    } catch(e) { console.error('云端保存失败', e); }
+    } catch(e) {
+      console.error('云端保存失败', e);
+    }
   }
 
   /* ==================== 音效 ==================== */
@@ -214,8 +285,14 @@
     </div>
   `;
 
-  function showTitle() { dom.titleEl.classList.remove('hidden'); }
-  function hideTitle() { dom.titleEl.classList.add('hidden'); }
+  function showTitle() { 
+    dom.titleEl.classList.remove('hidden'); 
+    if(document.getElementById('btn-pause')) document.getElementById('btn-pause').style.display = 'none';
+  }
+  function hideTitle() { 
+    dom.titleEl.classList.add('hidden'); 
+    if(document.getElementById('btn-pause')) document.getElementById('btn-pause').style.display = 'block';
+  }
 
   function bindTitleEvents() {
     const cardDef = document.getElementById('mode-defender');
@@ -316,54 +393,36 @@
           btnLogin.style.color = '#5ee6a8';
           btnLogin.style.borderColor = 'rgba(94,230,168,0.8)';
           
-          // 如果是 tester 账号，显示测试面板
-          if (currentUsername === 'tester') {
-            testerPanel.style.display = 'block';
-          } else {
-            testerPanel.style.display = 'none';
+          if (testerPanel) {
+            if (currentUsername === 'tester') testerPanel.style.display = 'block';
+            else testerPanel.style.display = 'none';
           }
         } else {
           btnLogin.textContent = `👤 账号登录`;
           btnLogin.style.color = '#5ee6a8';
           btnLogin.style.borderColor = 'rgba(94,230,168,0.4)';
-          testerPanel.style.display = 'none';
+          if (testerPanel) testerPanel.style.display = 'none';
         }
       };
-      updateLoginUI(); // 初始化时调用
+      updateLoginUI(); 
 
       // ===== 绑定测试面板的按钮事件 =====
-      document.getElementById('test-add-pt').onclick = () => {
-        sysPoints += 10000;
-        saveDataToCloud();
-        updateUpgradeUI();
-      };
-      document.getElementById('test-sub-pt').onclick = () => {
-        sysPoints = Math.max(0, sysPoints - 10000);
-        saveDataToCloud();
-        updateUpgradeUI();
-      };
-      document.getElementById('test-max-up').onclick = () => {
-        sysPoints = 999999;
-        DB.upgrades = { hp:99, energy:10, chip:30, weapon:10, duration:10, damage:20, crit:20 };
-        saveDataToCloud();
-        updateUpgradeUI();
-      };
-      document.getElementById('test-add-score').onclick = () => {
-        highestScore += 100000;
-        saveDataToCloud();
-      };
-
-      document.getElementById('test-reset-all').onclick = () => {
-        if (confirm("确定要清空所有积分、最高分和升级等级吗？此操作不可逆！")) {
-          sysPoints = 0;
-          highestScore = 0;
-          DB.upgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
-          
-          saveDataToCloud(); // 立刻同步云端
-          updateUpgradeUI(); // 刷新界面
-          
-          alert("数据已成功重置！");
-        }
+      if (document.getElementById('test-add-pt')) {
+        document.getElementById('test-add-pt').onclick = () => { sysPoints += 10000; saveDataToCloud(); updateUpgradeUI(); };
+        document.getElementById('test-sub-pt').onclick = () => { sysPoints = Math.max(0, sysPoints - 10000); saveDataToCloud(); updateUpgradeUI(); };
+        document.getElementById('test-max-up').onclick = () => { sysPoints = 999999; DB.upgrades = { hp:99, energy:10, chip:30, weapon:10, duration:10, damage:20, crit:20 }; saveDataToCloud(); updateUpgradeUI(); };
+        document.getElementById('test-add-score').onclick = () => { highestScore += 100000; saveDataToCloud(); };
+        document.getElementById('test-reset-all').onclick = () => {
+          if (confirm("确定要清空所有积分、最高分和升级等级吗？(已解锁的关卡进度将保留)")) {
+            sysPoints = 0; 
+            highestScore = 0; 
+            DB.upgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
+            // 不重置 maxLevel，保留你的闯关记录
+            saveDataToCloud(); 
+            updateUpgradeUI(); 
+            alert("积分与升级已重置！");
+          }
+        };
       };
 
       updateLoginUI(); // 初始化时调用
@@ -437,6 +496,76 @@
       document.getElementById('btn-do-login').onclick = () => doAuth('login');
       document.getElementById('btn-do-register').onclick = () => doAuth('register');
     }
+
+    // ===== 关卡选择系统 =====
+    // ===== 关卡选择系统 =====
+    const levelModal = document.getElementById('level-modal');
+    const levelGrid = document.getElementById('level-grid');
+    const btnOpenLevels = document.getElementById('btn-open-levels');
+
+    if (btnOpenLevels && levelModal && levelGrid) {
+      btnOpenLevels.onclick = (e) => {
+        if(e) e.stopPropagation();
+        levelGrid.innerHTML = '';
+        let maxDisplay = Math.max(15, maxLevel + 10);
+        for (let i = 1; i <= maxDisplay; i++) {
+          const btn = document.createElement('button');
+          btn.className = 'upgrade-btn';
+          btn.textContent = `关卡 ${i}`;
+          btn.style.padding = '10px 0';
+          btn.style.fontSize = '14px';
+
+          if (i > maxLevel) {
+            btn.disabled = true;
+            btn.style.opacity = '0.3';
+            btn.textContent = '🔒 锁定';
+          } else {
+            btn.style.borderColor = (i === maxLevel) ? '#ffcc00' : '#5ae8ff';
+            btn.style.color = (i === maxLevel) ? '#ffcc00' : '#5ae8ff';
+            btn.onclick = () => {
+              levelModal.style.display = 'none';
+              window.startLevel(i, true); // 传入 true 表示从菜单进入，重置属性
+            };
+          }
+          levelGrid.appendChild(btn);
+        }
+        levelModal.style.display = 'flex';
+      };
+      
+      const btnCloseLevels = document.getElementById('btn-close-levels');
+      if (btnCloseLevels) {
+        btnCloseLevels.onclick = () => levelModal.style.display = 'none';
+      }
+    };
+    
+    // ===== 暂停系统 =====
+    const btnPause = document.getElementById('btn-pause');
+    const pauseScreen = document.getElementById('pause-screen');
+    const btnResume = document.getElementById('btn-resume');
+    const btnQuit = document.getElementById('btn-quit');
+
+    if (btnPause && pauseScreen) {
+      btnPause.onclick = () => {
+        if (state.scene !== 'playing' || state.isPaused) return;
+        state.isPaused = true;
+        pauseScreen.style.display = 'flex';
+        DB.mouse.down = false; // 防止暂停时武器卡在手里
+        DB.heldWeapon = null;
+        DB.keys.clear();
+      };
+
+      btnResume.onclick = () => {
+        state.isPaused = false;
+        pauseScreen.style.display = 'none';
+        lastTime = performance.now(); // 重置时间戳防止跳帧
+      };
+
+      btnQuit.onclick = () => {
+        state.isPaused = false;
+        pauseScreen.style.display = 'none';
+        backToTitle();
+      };
+    }
   }
 
   /* ==================== 结算蓝屏 ==================== */
@@ -489,18 +618,47 @@
     DB.sfx.start();
   }
 
-  window.startLevel = function(lv) {
-    hideTitle(); resetWorld(false);
-    state.mode = currentMode;
-    state.scene = 'playing';
-    state.gameMode = 'level';
-    state.currentLevel = lv;
-    state.levelClearT = 0;
-    
-    // 初始给 3 把武器，满血
-    for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
-    DB.spawnLevelWave(lv);
-    DB.sfx.start();
+  window.startLevel = function(lv, isNewGame = false) {
+    try {
+      console.log("Starting Level:", lv, "New Game:", isNewGame);
+      
+      // 1. 清理场上的实体（怪物、子弹、武器、掉落物）
+      for (const w of DB.weapons.slice()) DB.removeWeapon(w);
+      DB.enemyBullets.length = 0; 
+      DB.enemies.length = 0; 
+      DB.chips.length = 0; 
+      DB.particles.length = 0;
+      DB.boss = null; state.qte.active = false; DB.heldWeapon = null; DB.keys.clear(); DB.mouse.down = false;
+      
+      // 2. 如果是新游戏（从菜单点进来的），重置所有属性和位置
+      if (isNewGame) {
+        state.hpMax = 100 + (DB.upgrades.hp * 20); 
+        state.hp = state.hpMax; 
+        state.energy = DB.upgrades.energy * 10;
+        state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0 };
+        state.combo = 0; state.maxCombo = 0; state.score = 0;
+        state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
+        DB.player.x = W * 0.34; DB.player.y = 600; DB.player.vx = 0; DB.player.vy = 0;
+      }
+      // 如果是切关，则保留 state.hp、state.mods 和 state.score，只补满能量（可选）
+      
+      // 3. 初始化关卡状态
+      hideTitle();
+      state.mode = currentMode;
+      state.scene = 'playing';
+      state.gameMode = 'level';
+      state.currentLevel = lv;
+      state.levelClearT = 0;
+      state.levelSubWave = 1;
+      state.levelWaveBreakT = 0;
+      
+      // 4. 发初始武器并刷第一波怪
+      for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
+      DB.spawnLevelWave(lv, 1); 
+      DB.sfx.start();
+    } catch (e) {
+      console.error("StartLevel Error:", e);
+    }
   };
   function backToTitle() { 
     hideGameOver(); resetWorld(false); showTitle(); state.scene = 'title'; 
@@ -621,27 +779,51 @@
       if (state.levelClearT > 0) {
         state.levelClearT -= dt;
         if (state.levelClearT <= 0) {
-          if (state.currentLevel >= 10) {
-            // 通关
-            state.scene = 'gameover';
-            showGameOver(true);
-          } else {
-            // 下一关
-            state.hp = Math.min(state.hpMax, state.hp + 30); // 每关回 30 血
-            for (let i = 0; i < 2; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; } // 补 2 把武器
-            window.startLevel(state.currentLevel + 1);
+          // 【修改】去掉通关上限，直接解锁下一关
+          if (state.currentLevel >= maxLevel) {
+            maxLevel = state.currentLevel + 1;
+            localStorage.setItem('sys_max_level', maxLevel); // <--- 新增本地保存
+            saveDataToCloud();
+            if (DB.floaters) DB.floaters.push({ text: '🔓 已解锁下一关!', x: DB.player.x, y: DB.player.y - 50, vy: -40, life: 2, maxLife: 2, color: '#ffcc00', isCrit: true });
           }
+          state.hp = Math.min(state.hpMax, state.hp + 30); 
+          for (let i = 0; i < 2; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
+          window.startLevel(state.currentLevel + 1, false); // 传入 false 保留属性
         }
         return;
       }
 
-      if (DB.enemies.length === 0 && (!DB.boss || DB.boss.hp <= 0)) {
-        state.levelClearT = 3.0;
-        state.flash = 0.5;
-        DB.sfx.clear();
+      // 关卡内波次间隔时间
+      if (state.levelWaveBreakT > 0) {
+        state.levelWaveBreakT -= dt;
+        if (state.levelWaveBreakT <= 0) {
+          DB.spawnLevelWave(state.currentLevel, state.levelSubWave);
+        }
+        return;
+      }
+
+      // 场上怪物清空（【QTE 修复】QTE 激活期间不得判定通关）
+      // bossDefeated 语义：没有 Boss，或 Boss 已被彻底击杀（QTE 完成后会被置 null）
+      // 瘫痪状态（paralyzed）的 Boss 即使 hp=0 也不算"已死"，必须等玩家按完 QTE
+      const bossDefeated = !DB.boss || (DB.boss.hp <= 0 && DB.boss.phase !== 'paralyzed');
+
+      if (DB.enemies.length === 0 && !state.qte.active && bossDefeated) {
+        if (state.levelSubWave < state.levelTotalWaves) {
+          // 还有下一波
+          state.levelSubWave++;
+          state.levelWaveBreakT = 2.0; // 休息 2 秒
+          state.flash = 0.3;
+          DB.sfx.chip();
+        } else {
+          // 整个关卡通关
+          state.levelClearT = 3.0;
+          state.flash = 0.5;
+          DB.sfx.clear();
+        }
       }
       return;
     }
+
 
     // ===== 无尽模式逻辑 =====
     if (state.waveBreakT > 0) {
@@ -708,7 +890,18 @@
           bgCtx.fillStyle = '#ffcc00';
           bgCtx.font = 'bold 20px ui-monospace, monospace';
           bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 10;
-          bgCtx.fillText(`LEVEL ${state.currentLevel} / 10`, VW / 2, 46);
+          
+          // 【修改】显示波次进度
+          bgCtx.fillText(`LEVEL ${state.currentLevel}`, VW / 2, 46);;
+          bgCtx.font = 'bold 14px ui-monospace, monospace';
+          bgCtx.fillStyle = 'rgba(255, 204, 0, 0.7)';
+          bgCtx.fillText(`WAVE ${state.levelSubWave} / ${state.levelTotalWaves}`, VW / 2, 70);
+
+          if (state.levelWaveBreakT > 0) {
+             bgCtx.fillStyle = 'rgba(255,255,255,0.8)';
+             bgCtx.font = '16px ui-monospace, monospace';
+             bgCtx.fillText(`下一波准备中... ${state.levelWaveBreakT.toFixed(1)}s`, VW/2, VH - 100);
+          }
 
           if (state.levelClearT > 0) {
             bgCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
@@ -1005,7 +1198,12 @@
     const mouse = DB.mouse, trail = DB.trail, keys = DB.keys;
 
     dom.stage.addEventListener('mousedown', (e) => {
+      if (state.isPaused) return; 
       if (e.button !== 0) return;
+      
+      // 【新增】如果点到了暂停按钮，或者鼠标在 UI 弹窗上，直接 return
+      if (e.target.closest('#btn-pause')) return;
+      
       if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn') || e.target.closest('#auth-modal')) { if (state.scene === 'title') return; }
 
       if (state.scene === 'title') {
@@ -1033,6 +1231,12 @@
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     window.addEventListener('keydown', (e) => {
+      if (state.isPaused) {
+        if (e.key === 'Escape') { // 按 ESC 也能继续游戏
+           document.getElementById('btn-resume').click();
+        }
+        return; 
+      }
       // 如果正在输入框打字，或者在登录弹窗里，不触发全局按键
       if (e.target.tagName === 'INPUT' || (document.getElementById('auth-modal') && document.getElementById('auth-modal').style.display === 'flex')) return;
 
@@ -1082,6 +1286,7 @@
       });
 
       window.addEventListener('touchstart', (e) => {
+        if (state.isPaused) return;
         if (e.target.closest('#action-zone') || e.target.closest('#qte-zone') || e.target.closest('#joy-zone')) return;
         if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn')) return;
 
@@ -1203,35 +1408,50 @@
   function frame(now) {
     const realDt = Math.min((now - lastTime) / 1000, 0.05); lastTime = now;
 
-    state.shake *= Math.exp(-9 * realDt); if (state.shake < 0.15) state.shake = 0;
-    state.flash *= Math.exp(-11 * realDt); if (state.flash < 0.004) state.flash = 0;
-    state.damageFlash *= Math.exp(-10 * realDt); if (state.damageFlash < 0.004) state.damageFlash = 0;
+    try {
+      // 如果处于暂停状态，直接跳过逻辑更新，只渲染画面
+      if (state.isPaused) {
+        render(); 
+        DB.updateHUD();
+        requestAnimationFrame(frame); 
+        return;
+      }
 
-    if (state.skillCd > 0) state.skillCd -= realDt;
-    if (state.skillActiveT > 0) state.skillActiveT -= realDt;
-    state.bossEnrageFlash *= Math.exp(-6 * realDt); if (state.bossEnrageFlash < 0.004) state.bossEnrageFlash = 0;
-    if (state.bossEnrageTextT > 0) state.bossEnrageTextT = Math.max(0, state.bossEnrageTextT - realDt);
+      state.shake *= Math.exp(-9 * realDt); if (state.shake < 0.15) state.shake = 0;
+      state.flash *= Math.exp(-11 * realDt); if (state.flash < 0.004) state.flash = 0;
+      state.damageFlash *= Math.exp(-10 * realDt); if (state.damageFlash < 0.004) state.damageFlash = 0;
 
-    if (state.scene === 'title') { state.t += realDt; render(); DB.updateHUD(); requestAnimationFrame(frame); return; }
-    if (state.scene === 'gameover') {
-      if (state.gameOverLock > 0) state.gameOverLock -= realDt;
-      DB.updateParticles(realDt); render(); DB.updateHUD(); requestAnimationFrame(frame); return;
+      if (state.skillCd > 0) state.skillCd -= realDt;
+      if (state.skillActiveT > 0) state.skillActiveT -= realDt;
+      state.bossEnrageFlash *= Math.exp(-6 * realDt); if (state.bossEnrageFlash < 0.004) state.bossEnrageFlash = 0;
+      if (state.bossEnrageTextT > 0) state.bossEnrageTextT = Math.max(0, state.bossEnrageTextT - realDt);
+
+      if (state.scene === 'title') { state.t += realDt; render(); DB.updateHUD(); requestAnimationFrame(frame); return; }
+      if (state.scene === 'gameover') {
+        if (state.gameOverLock > 0) state.gameOverLock -= realDt;
+        DB.updateParticles(realDt); render(); DB.updateHUD(); requestAnimationFrame(frame); return;
+      }
+
+      if (state.hp <= 0 && state.scene === 'playing') {
+        state.scene = 'gameover'; state.gameOverLock = 0.6; state.hitstop = 0.12; state.shake = 30; DB.heldWeapon = null;
+        state.bossEnrageTextT = 0; state.bossEnrageFlash = 0;
+        if (state.score > highestScore) { highestScore = state.score; }
+        const earnedPoints = Math.floor(state.score / 10);
+        if (earnedPoints > 0) { sysPoints += earnedPoints; }
+        
+        saveDataToCloud().catch(e => console.log(e)); 
+        showGameOver();
+      }
+
+      let dt = realDt; if (state.hitstop > 0) { state.hitstop -= realDt; dt = 0; }
+
+      update(dt); render(); DB.updateHUD();
+    } catch (e) {
+      console.error("Game Loop Crashed:", e);
     }
-
-    if (state.hp <= 0 && state.scene === 'playing') {
-      state.scene = 'gameover'; state.gameOverLock = 0.6; state.hitstop = 0.12; state.shake = 30; DB.heldWeapon = null;
-      state.bossEnrageTextT = 0; state.bossEnrageFlash = 0;
-      if (state.score > highestScore) { highestScore = state.score; }
-      const earnedPoints = Math.floor(state.score / 10);
-      if (earnedPoints > 0) { sysPoints += earnedPoints; }
-      
-      saveDataToCloud(); // 数据变动，异步保存到云端
-      showGameOver();
-    }
-
-    let dt = realDt; if (state.hitstop > 0) { state.hitstop -= realDt; dt = 0; }
-
-    update(dt); render(); DB.updateHUD(); requestAnimationFrame(frame);
+    
+    // 无论是否报错，都要继续请求下一帧，保证游戏绝不卡死！
+    requestAnimationFrame(frame);
   }
 
   function init() {

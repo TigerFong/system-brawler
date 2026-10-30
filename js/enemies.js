@@ -1175,12 +1175,13 @@
     }
   };
 
-  DB.spawnLevelWave = function (lv) {
-    DB.enemies.length = 0;
+  DB.spawnLevelWave = function (lv, wave) {
     DB.enemyBullets.length = 0;
-    DB.boss = null;
     const p = DB.player;
-    const hpScale = 1 + (lv - 1) * 0.35; // 每关怪物血量 +35%
+    
+    // 动态难度缩放（上不封顶，每关血量 +35%）
+    const hpScale = 1 + (lv - 1) * 0.35 + (wave - 1) * 0.15;
+    const dmgScale = 1 + (lv - 1) * 0.25;
 
     function spawn(type, xOffset, yOffset, customHp, extra = {}) {
       const defs = {
@@ -1206,65 +1207,50 @@
       e.hp = Math.floor((customHp || d.hp) * hpScale);
       e.maxHp = e.hp;
       e.r = d.r;
-      e.dmg = Math.floor(d.dmg * (1 + lv * 0.1));
+      e.dmg = Math.floor(d.dmg * dmgScale);
       if (d.speed) e.speed = d.speed;
-
       DB.enemies.push(e);
     }
 
-    // 根据关卡生成不同敌人
-    if (lv === 1) {
-      for (let i = 0; i < 4; i++) spawn('drone', 300 + i * 100, (Math.random()-0.5)*200);
+    // ================== Boss 关判定 ==================
+    if (lv % 10 === 0) {
+      // 大 Boss 关 (10, 20, 30... 无限)
+      if (wave < 3) {
+        for (let i = 0; i < wave * 4; i++) spawn('charger', 300 + Math.random()*300, (Math.random()-0.5)*300);
+        for (let i = 0; i < wave * 2; i++) spawn('shield', 400 + Math.random()*300, (Math.random()-0.5)*300);
+      } else {
+        DB.spawnBoss(true);
+        // Boss 血量随关卡指数级成长
+        if (DB.boss) { DB.boss.hp *= (1 + Math.pow(lv/10, 1.5)); DB.boss.maxHp = DB.boss.hp; }
+      }
+      return;
     } 
-    else if (lv === 2) {
-      for (let i = 0; i < 3; i++) spawn('drone', 300 + i * 80, -100 + Math.random()*200);
-      spawn('worm', 500, 0);
-      spawn('worm', 650, 0);
-    } 
-    else if (lv === 3) {
-      spawn('shield', 400, 0);
-      spawn('shield', 600, 0);
-      spawn('turret', 350, 0);
-      spawn('turret', 700, 0);
-    } 
-    else if (lv === 4) {
-      spawn('charger', 300, 0);
-      spawn('charger', 500, 100);
-      spawn('splitter', 600, -100);
-      spawn('drone', 450, -200);
-    } 
-    else if (lv === 5) {
-      DB.spawnBoss(false); // 小 Boss
-    } 
-    else if (lv === 6) {
-      for (let i = 0; i < 4; i++) spawn('drone', 300 + i * 60, (Math.random()-0.5)*300);
-      spawn('shield', 500, 0);
-      spawn('worm', 700, 0);
-      spawn('charger', 400, 0);
-    } 
-    else if (lv === 7) {
-      spawn('turret', 300, 0);
-      spawn('turret', 450, 0);
-      spawn('turret', 600, 0);
-      spawn('splitter', 350, -150);
-      spawn('splitter', 550, 150);
-    } 
-    else if (lv === 8) {
-      spawn('shield', 400, 0);
-      spawn('charger', 600, 0);
-      spawn('worm', 300, 0);
-      spawn('worm', 700, 0);
-      for(let i=0; i<3; i++) spawn('drone', 450 + i*50, -200);
-    } 
-    else if (lv === 9) {
-      // 弹幕地狱
-      spawn('turret', 300, 0);
-      spawn('turret', 500, 0);
-      spawn('turret', 700, 0);
-      for (let i = 0; i < 6; i++) spawn('drone', 350 + i * 60, -100);
-    } 
-    else if (lv === 10) {
-      DB.spawnBoss(true); // 大 Boss
+    if (lv % 5 === 0) {
+      // 小 Boss 关 (5, 15, 25... 无限)
+      if (wave < 3) {
+        for (let i = 0; i < wave * 3; i++) spawn('drone', 300 + Math.random()*400, (Math.random()-0.5)*300);
+        for (let i = 0; i < wave; i++) spawn('turret', 500 + Math.random()*200, 0);
+      } else {
+        DB.spawnBoss(false);
+        if (DB.boss) { DB.boss.hp *= (1 + lv/20); DB.boss.maxHp = DB.boss.hp; }
+      }
+      return;
+    }
+
+    // ================== 普通关动态生成 ==================
+    let pool = ['drone'];
+    if (lv >= 3) pool.push('worm');
+    if (lv >= 6) pool.push('shield');
+    if (lv >= 9) pool.push('charger');
+    if (lv >= 12) pool.push('turret');
+    if (lv >= 15) pool.push('splitter');
+
+    // 每波刷怪数量随波次和关卡数增加，最高 25 只防卡死
+    let count = Math.min(25, 3 + wave * 2 + Math.floor(lv / 2));
+
+    for (let i = 0; i < count; i++) {
+      const type = pool[Math.floor(Math.random() * pool.length)];
+      spawn(type, 300 + Math.random() * 600, (Math.random() - 0.5) * 500);
     }
   };
 

@@ -441,7 +441,7 @@
     state.shake  = Math.min(state.shake + 5, 24);
     
     const upData = DB.upgrades || { chip: 0 };
-    let dropChance = 0.6 + (upData.chip * 0.1); 
+    let dropChance = 0.6 + (upData.chip * 0.1) + (state.levelChipRate || 0);
     while (dropChance > 0) {
       if (Math.random() < Math.min(1, dropChance)) DB.spawnChip(e.x, e.y);
       dropChance -= 1;

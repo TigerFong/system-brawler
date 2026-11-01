@@ -35,7 +35,10 @@
     levelClearT: 0,
     levelSubWave: 1,
     levelTotalWaves: 3,
-    levelWaveBreakT: 0
+    levelWaveBreakT: 0,
+    appliedLevelCleared: 0,
+    levelBonusWeapons: 0,
+    levelChipRate: 0
   };
 
   DB.player = {

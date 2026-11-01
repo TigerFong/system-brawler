@@ -52,7 +52,7 @@
       }
     }
 
-    const maxWeapons = CFG.MAX_WEAPONS + (DB.upgrades ? DB.upgrades.weapon : 0);
+    const maxWeapons = CFG.MAX_WEAPONS + (DB.upgrades ? DB.upgrades.weapon : 0) + (state.levelBonusWeapons || 0);
     if (!isCode && countActiveWeapons() >= maxWeapons) return null;
 
     const isHacker = state.mode === 'hacker';

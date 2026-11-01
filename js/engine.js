@@ -12,6 +12,7 @@
   let highestScore = 0;
   let sysPoints = 0;
   let maxLevel = parseInt(localStorage.getItem('sys_max_level') || '1', 10);
+  DB.maxLevel = maxLevel;
   let cloudToken = localStorage.getItem('sys_auth_token');
   let currentUsername = localStorage.getItem('sys_auth_username') || ''; // 新增
   let loadingTimer = null;
@@ -80,6 +81,7 @@
       DB.upgrades = data.upgrades;
       // 兼容后端返回的 maxlevel
       if (data.maxlevel && data.maxlevel > maxLevel) {
+        DB.maxLevel = maxLevel;
         maxLevel = data.maxlevel;
         localStorage.setItem('sys_max_level', maxLevel);
       }
@@ -364,6 +366,36 @@
       btnDamage.disabled = sysPoints < getCost('damage', DB.upgrades.damage) || DB.upgrades.damage >= 20; btnDamage.innerHTML = makeHTML('初始伤害 +10%', DB.upgrades.damage, 20, getCost('damage', DB.upgrades.damage));
       btnCrit.disabled = sysPoints < getCost('crit', DB.upgrades.crit) || DB.upgrades.crit >= 20;
       if(btnCrit) btnCrit.innerHTML = makeHTML('暴击伤害 +10%', DB.upgrades.crit, 20, getCost('crit', DB.upgrades.crit));
+
+      // 关卡永久奖励总览
+      const summaryEl = document.getElementById('level-rewards-summary');
+      if (summaryEl) {
+        const cleared = Math.max(0, (DB.maxLevel || 1) - 1);
+        if (cleared === 0) {
+          summaryEl.innerHTML = `<div style="color:#666; font-size:12px; text-align:center; padding:12px 0;">通过关卡模式挑战，每关永久解锁一个专属加成</div>`;
+        } else {
+          const t = DB.getTotalLevelRewards(cleared);
+          const rows = [];
+          if (t.grab > 0)       rows.push(`🎯 抓取范围 +${Math.round(t.grab)}`);
+          if (t.damage > 0)     rows.push(`⚔️ 伤害 +${Math.round(t.damage * 100)}%`);
+          if (t.initEnergy > 0) rows.push(`⚡ 初始能量 +${Math.round(t.initEnergy)}`);
+          if (t.moveSpeed > 0)  rows.push(`🏃 移速 +${Math.round(t.moveSpeed * 100)}%`);
+          if (t.maxWeapons > 0) rows.push(`🗡️ 武器上限 +${t.maxWeapons}`);
+          if (t.critRate > 0)   rows.push(`💥 暴击率 +${Math.round(t.critRate * 100)}%`);
+          if (t.chipRate > 0)   rows.push(`💎 掉率 +${Math.round(t.chipRate * 100)}%`);
+          if (t.critDmg > 0)    rows.push(`🔥 暴伤 +${Math.round(t.critDmg * 100)}%`);
+          if (t.lifesteal > 0)  rows.push(`🩸 吸血 +${Math.round(t.lifesteal)}`);
+
+          summaryEl.innerHTML = `
+            <div style="color:#ffcc00; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px;">
+              🏅 关卡永久奖励 (已通关 ${cleared} 关)
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px 12px; font-size:11px; color:#ddd;">
+              ${rows.map(r => `<div>${r}</div>`).join('')}
+            </div>
+          `;
+        }
+      }
     }
 
     function buyUpgrade(type, maxLv) {
@@ -520,11 +552,22 @@
             btn.style.opacity = '0.3';
             btn.textContent = '🔒 锁定';
           } else {
+            const reward = DB.getLevelReward(i);
+            btn.style.padding = '8px 4px';
+            btn.style.lineHeight = '1.35';
             btn.style.borderColor = (i === maxLevel) ? '#ffcc00' : '#5ae8ff';
             btn.style.color = (i === maxLevel) ? '#ffcc00' : '#5ae8ff';
+            if (reward) {
+              btn.innerHTML = `
+                <div style="font-size:14px; font-weight:bold;">关卡 ${i}</div>
+                <div style="font-size:10px; opacity:0.8; margin-top:4px;">${reward.icon} ${reward.label} ${reward.display}</div>
+              `;
+            } else {
+              btn.textContent = `关卡 ${i}`;
+            }
             btn.onclick = () => {
               levelModal.style.display = 'none';
-              window.startLevel(i, true); // 传入 true 表示从菜单进入，重置属性
+              window.startLevel(i, true);
             };
           }
           levelGrid.appendChild(btn);
@@ -593,10 +636,13 @@
     DB.enemyBullets.length = 0; DB.enemies.length = 0; DB.chips.length = 0; DB.particles.length = 0;
     DB.boss = null; state.qte.active = false; DB.heldWeapon = null; DB.keys.clear(); DB.mouse.down = false;
 
-    state.hpMax = 100 + (DB.upgrades.hp * 20); state.hp = state.hpMax; state.energy = DB.upgrades.energy * 10;
+    state.hpMax = 100 + (DB.upgrades.hp * 20); state.hp = state.hpMax;
     state.wave = 1; state.waveBreakT = 0; state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
     state.bossEnrageFlash = 0; state.bossEnrageTextT = 0;
     state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
+    state.appliedLevelCleared = 0;
+    state.energy = DB.upgrades.energy * 10;
+    DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
     state.skillCd = 0; state.skillActiveT = 0;
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
     state.tutorial.active = false;
@@ -639,8 +685,14 @@
         state.combo = 0; state.maxCombo = 0; state.score = 0;
         state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
         DB.player.x = W * 0.34; DB.player.y = 600; DB.player.vx = 0; DB.player.vy = 0;
+        // 【新增】新游戏时应用累计关卡奖励
+        state.appliedLevelCleared = 0;
+        DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
       }
-      // 如果是切关，则保留 state.hp、state.mods 和 state.score，只补满能量（可选）
+      // 如果是切关，保留 state.hp、state.mods、state.score，只补新解锁的关卡奖励
+      if (!isNewGame) {
+        DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
+      }
       
       // 3. 初始化关卡状态
       hideTitle();
@@ -779,10 +831,10 @@
       if (state.levelClearT > 0) {
         state.levelClearT -= dt;
         if (state.levelClearT <= 0) {
-          // 【修改】去掉通关上限，直接解锁下一关
           if (state.currentLevel >= maxLevel) {
             maxLevel = state.currentLevel + 1;
-            localStorage.setItem('sys_max_level', maxLevel); // <--- 新增本地保存
+            DB.maxLevel = maxLevel;
+            localStorage.setItem('sys_max_level', maxLevel);
             saveDataToCloud();
             if (DB.floaters) DB.floaters.push({ text: '🔓 已解锁下一关!', x: DB.player.x, y: DB.player.y - 50, vy: -40, life: 2, maxLife: 2, color: '#ffcc00', isCrit: true });
           }
@@ -816,7 +868,7 @@
           DB.sfx.chip();
         } else {
           // 整个关卡通关
-          state.levelClearT = 3.0;
+          state.levelClearT = 4.0;
           state.flash = 0.5;
           DB.sfx.clear();
         }
@@ -904,21 +956,30 @@
           }
 
           if (state.levelClearT > 0) {
-            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-            bgCtx.fillRect(0, VH/2 - 60, VW, 120);
+            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            bgCtx.fillRect(0, VH/2 - 80, VW, 160);
             bgCtx.strokeStyle = '#5ee6a8'; bgCtx.lineWidth = 2;
-            bgCtx.strokeRect(0, VH/2 - 60, VW, 120);
+            bgCtx.strokeRect(0, VH/2 - 80, VW, 160);
             
             bgCtx.textAlign = 'center';
             bgCtx.fillStyle = '#5ee6a8';
             bgCtx.font = 'bold 36px ui-monospace, monospace';
             bgCtx.shadowColor = '#5ee6a8'; bgCtx.shadowBlur = 20;
-            bgCtx.fillText(`LEVEL ${state.currentLevel} CLEARED`, VW/2, VH/2 + 5);
+            bgCtx.fillText(`LEVEL ${state.currentLevel} CLEARED`, VW/2, VH/2 - 30);
+            
+            // 显示本关解锁的永久奖励
+            const clearReward = DB.getLevelReward(state.currentLevel);
+            if (clearReward) {
+              bgCtx.fillStyle = '#ffcc00';
+              bgCtx.font = 'bold 20px ui-monospace, monospace';
+              bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 15;
+              bgCtx.fillText(`${clearReward.icon} 永久奖励：${clearReward.label} ${clearReward.display}`, VW/2, VH/2 + 15);
+            }
             
             bgCtx.fillStyle = '#ffffff';
             bgCtx.font = '14px ui-monospace, monospace';
             bgCtx.shadowBlur = 0;
-            bgCtx.fillText(state.currentLevel >= 10 ? '最终挑战完成，系统已安全！' : '准备进入下一关...', VW/2, VH/2 + 40);
+            bgCtx.fillText('奖励已永久生效 · 准备进入下一关...', VW/2, VH/2 + 55);
           }
         } else {
           // 只有无尽模式才画 WAVE
@@ -1048,11 +1109,11 @@
 
         if (state.combo > 1) {
           bgCtx.save(); bgCtx.textAlign = 'left'; const scale = 1 + Math.min(0.5, state.combo * 0.02);
-          bgCtx.translate(30, 90); bgCtx.scale(scale, scale);
+          bgCtx.translate(30, 100); bgCtx.scale(scale, scale); // y 从 90 改为 100
           bgCtx.font = 'bold 32px ui-monospace, monospace'; bgCtx.fillStyle = '#ffcc00'; bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 15;
           bgCtx.fillText(`${state.combo} COMBO`, 0, 0); bgCtx.restore();
           bgCtx.save(); bgCtx.textAlign = 'left'; bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
-          bgCtx.fillText(`SCORE: ${state.score}`, 32, 115); bgCtx.restore();
+          bgCtx.fillText(`SCORE: ${state.score}`, 32, 125); bgCtx.restore(); // y 从 115 改为 125
         }
 
         if (state.waveBreakT > 0) {
@@ -1106,14 +1167,15 @@
         bgCtx.fillText(`${skillName}  -  ${cdText}`, 24, VH - 24);
 
         const mods = state.mods;
-        if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0) {
+        if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0 || (mods.critRate || 0) > 0) {
           bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
-          let yy = 30;
-          if (mods.damage > 0)    { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 16; }
-          if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 16; }
-          if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 16; }
-          if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 16; }
-          if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 16; }
+          // 从底部往上排，避开左上角 COMBO 和底部终端
+          let yy = VH - 220; 
+          if (mods.damage > 0)    { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 18; }
+          if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 18; }
+          if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 18; }
+          if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 18; }
+          if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 18; }
           const rawCritRate = 15 + Math.round((mods.critRate || 0) * 100);
           const totalCritRate = Math.min(80, rawCritRate);
           const isCritMax = rawCritRate >= 80 ? ' (MAX)' : '';

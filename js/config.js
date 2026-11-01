@@ -111,4 +111,67 @@ DB.BOSS_CFG = {
     return dx * dx + dy * dy < cr * cr;
   };
 
+  // ==================== 关卡永久奖励系统 ====================
+  // 通过第 N 关 → 永久解锁该关奖励（跨局保留、云端同步）
+  DB.getLevelReward = function (level) {
+    const cycle = Math.floor((level - 1) / 10); // 第几个 10 关周期
+    const pos = ((level - 1) % 10) + 1;          // 本周期内第几关
+    const tier = 1 + cycle * 0.5;                // 每周期数值 ×1.5
+
+    switch (pos) {
+      case 1:  return { type: 'grab',       value: 40 * tier,    icon: '🎯', label: '抓取范围', display: `+${Math.round(40 * tier)}` };
+      case 2:  return { type: 'damage',     value: 0.10 * tier,  icon: '⚔️', label: '初始伤害', display: `+${Math.round(10 * tier)}%` };
+      case 3:  return { type: 'initEnergy', value: 15 * tier,    icon: '⚡', label: '初始能量', display: `+${Math.round(15 * tier)}` };
+      case 4:  return { type: 'moveSpeed',  value: 0.10 * tier,  icon: '🏃', label: '移动速度', display: `+${Math.round(10 * tier)}%` };
+      case 5:  return { type: 'maxWeapons', value: 1,            icon: '🗡️', label: '武器上限', display: `+1` };
+      case 6:  return { type: 'critRate',   value: 0.03 * tier,  icon: '💥', label: '暴击率',   display: `+${Math.round(3 * tier)}%`, extra: { critDmg: 0.10 * tier } };
+      case 7:  return { type: 'chipRate',   value: 0.15 * tier,  icon: '💎', label: '芯片掉率', display: `+${Math.round(15 * tier)}%` };
+      case 8:  return { type: 'critDmg',    value: 0.25 * tier,  icon: '🔥', label: '暴击伤害', display: `+${Math.round(25 * tier)}%` };
+      case 9:  return { type: 'lifesteal',  value: 2 * tier,     icon: '🩸', label: '击杀吸血', display: `+${Math.round(2 * tier)}` };
+      case 10: return { type: 'initEnergy', value: 30 * tier,    icon: '⚡', label: '初始能量', display: `+${Math.round(30 * tier)}`, extra: { damage: 0.05 * tier } };
+    }
+    return null;
+  };
+
+  DB.getTotalLevelRewards = function (maxLevelCleared) {
+    const total = {
+      grab: 0, damage: 0, initEnergy: 0, moveSpeed: 0,
+      maxWeapons: 0, critRate: 0, chipRate: 0, critDmg: 0, lifesteal: 0
+    };
+    for (let lv = 1; lv <= maxLevelCleared; lv++) {
+      const r = DB.getLevelReward(lv);
+      if (!r) continue;
+      total[r.type] = (total[r.type] || 0) + r.value;
+      if (r.extra) {
+        for (const k in r.extra) total[k] = (total[k] || 0) + r.extra[k];
+      }
+    }
+    return total;
+  };
+
+  // 将"从已应用到新通关"的差额注入 state（切关时补新解锁的奖励）
+  DB.applyLevelRewards = function (state, newCleared) {
+    if (!state || !state.mods) return;
+    const oldCleared = state.appliedLevelCleared || 0;
+    const oldT = DB.getTotalLevelRewards(oldCleared);
+    const newT = DB.getTotalLevelRewards(newCleared);
+
+    state.mods.grab       = (state.mods.grab       || 0) + (newT.grab       - oldT.grab);
+    state.mods.damage     = (state.mods.damage     || 0) + (newT.damage     - oldT.damage);
+    state.mods.moveSpeed  = (state.mods.moveSpeed  || 0) + (newT.moveSpeed  - oldT.moveSpeed);
+    state.mods.critRate   = (state.mods.critRate   || 0) + (newT.critRate   - oldT.critRate);
+    state.mods.critDmg    = (state.mods.critDmg    || 0) + (newT.critDmg    - oldT.critDmg);
+    state.mods.lifesteal  = (state.mods.lifesteal  || 0) + (newT.lifesteal  - oldT.lifesteal);
+
+    // 绝对上限/掉率直接覆盖
+    state.levelBonusWeapons = newT.maxWeapons;
+    state.levelChipRate     = newT.chipRate;
+
+    if (newT.initEnergy > oldT.initEnergy) {
+      state.energy = Math.min(state.energyMax, (state.energy || 0) + (newT.initEnergy - oldT.initEnergy));
+    }
+
+    state.appliedLevelCleared = newCleared;
+  };
+
 })(window.DB);

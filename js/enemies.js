@@ -1193,8 +1193,10 @@
         splitter: { hp: 200, r: 26, dmg: 15 }
       };
       const d = defs[type];
-      const baseX = p.x + xOffset;
-      const baseY = p.y + yOffset;
+      
+      // 【修复】强制把生成的坐标限制在世界边界内，防止刷在界外卡死
+      const baseX = DB.clamp(p.x + xOffset, 80, W - 80); 
+      const baseY = DB.clamp(p.y + yOffset, CFG.PLAY_TOP + 20, CFG.GROUND_Y - 20);
       
       let e = { type, x: baseX, y: baseY, seed: Math.random() * 100, flashT: 0, frozen: 0, isNew: true, ...extra };
       if (type === 'drone') { e.baseX = baseX; e.baseY = baseY; e.fireCd = 1 + Math.random(); }

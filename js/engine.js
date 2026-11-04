@@ -11,12 +11,54 @@
 
   let highestScore = 0;
   let sysPoints = 0;
-  let maxLevel = parseInt(localStorage.getItem('sys_max_level') || '1', 10);
-  DB.maxLevel = maxLevel;
+  let maxLevel = 1;
   let cloudToken = localStorage.getItem('sys_auth_token');
-  let currentUsername = localStorage.getItem('sys_auth_username') || ''; // 新增
+  let currentUsername = localStorage.getItem('sys_auth_username') || '';
   let loadingTimer = null;
   let loadingSec = 0;
+
+  const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
+  DB.upgrades = { ...defaultUpgrades };
+
+  // ==================== 存档管理（本地/云端分离） ====================
+  function loadLocalData() {
+    sysPoints = parseInt(localStorage.getItem('sys_points') || '0', 10);
+    highestScore = parseInt(localStorage.getItem('sys_highscore') || '0', 10);
+    maxLevel = parseInt(localStorage.getItem('sys_max_level') || '1', 10);
+    DB.maxLevel = maxLevel;
+    
+    try {
+      const savedUpgrades = localStorage.getItem('sys_upgrades');
+      DB.upgrades = savedUpgrades ? JSON.parse(savedUpgrades) : { ...defaultUpgrades };
+    } catch (e) {
+      DB.upgrades = { ...defaultUpgrades };
+    }
+  }
+
+  function saveData() {
+    if (cloudToken) {
+      // 已登录：只存云端
+      fetch(`${API_BASE}/save`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cloudToken}` 
+        },
+        body: JSON.stringify({ 
+          points: sysPoints, 
+          upgrades: DB.upgrades, 
+          highscore: highestScore, 
+          maxlevel: maxLevel 
+        })
+      }).catch(e => console.error('云端保存失败', e));
+    } else {
+      // 未登录：只存本地
+      localStorage.setItem('sys_points', sysPoints);
+      localStorage.setItem('sys_highscore', highestScore);
+      localStorage.setItem('sys_max_level', maxLevel);
+      localStorage.setItem('sys_upgrades', JSON.stringify(DB.upgrades));
+    }
+  }
 
   function showLoading(text = '正在连接云端服务器...') {
     loadingSec = 0;
@@ -31,11 +73,11 @@
       loadingSec++;
       if (loadingSec > 5) {
         sub.textContent = `已等待 ${loadingSec} 秒...服务器可能正在唤醒中`;
-        sub.style.color = '#ffaa00'; // 超时变黄提醒
+        sub.style.color = '#ffaa00';
       }
       if (loadingSec > 20) {
         sub.textContent = `已等待 ${loadingSec} 秒...请检查网络或稍后重试`;
-        sub.style.color = '#ff5a7a'; // 超时变红警告
+        sub.style.color = '#ff5a7a';
       }
     }, 1000);
   }
@@ -47,12 +89,8 @@
   
   const API_BASE = 'https://system-brawler-api.onrender.com/api';
 
-  const defaultUpgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
-  DB.upgrades = { ...defaultUpgrades };
-
-  // 通用 Fetch 超时封装
   async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 60000 } = options; // 默认最多等 60 秒
+    const { timeout = 60000 } = options;
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
     try {
@@ -69,55 +107,27 @@
     if (!cloudToken) return;
     showLoading('正在读取云端存档...');
     try {
-      // 替换原来的 fetch 为 fetchWithTimeout
       const res = await fetchWithTimeout(`${API_BASE}/save`, { 
         headers: { 'Authorization': `Bearer ${cloudToken}` },
         timeout: 60000 
       });
       if (!res.ok) throw new Error('Token invalid');
       const data = await res.json();
-      sysPoints = data.points;
-      highestScore = data.highscore;
-      DB.upgrades = data.upgrades;
-      // 兼容后端返回的 maxlevel
-      if (data.maxlevel && data.maxlevel > maxLevel) {
-        DB.maxLevel = maxLevel;
-        maxLevel = data.maxlevel;
-        localStorage.setItem('sys_max_level', maxLevel);
-      }
-      localStorage.setItem('sys_auth_token', cloudToken);
+      
+      // 登录状态下，纯云端覆盖
+      sysPoints = data.points || 0;
+      highestScore = data.highscore || 0;
+      DB.upgrades = data.upgrades || { ...defaultUpgrades };
+      maxLevel = data.maxlevel || 1;
+      DB.maxLevel = maxLevel;
+      
     } catch(e) {
       console.log('同步失败', e);
       if (e.name === 'AbortError') {
         alert('云端连接超时，请检查网络。当前将使用本地离线数据游玩。');
-      } else {
-        // 如果 Token 过期或无效，才清除 token
-        // cloudToken = null;
-        // localStorage.removeItem('sys_auth_token');
       }
     } finally {
       hideLoading();
-    }
-  }
-
-  async function saveDataToCloud() {
-    if (!cloudToken) return; // 没登录直接返回，靠本地 localStorage 存
-    try {
-      await fetch(`${API_BASE}/save`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cloudToken}` 
-        },
-        body: JSON.stringify({ 
-          points: sysPoints, 
-          upgrades: DB.upgrades, 
-          highscore: highestScore, 
-          maxlevel: maxLevel // 传关卡进度
-        })
-      });
-    } catch(e) {
-      console.error('云端保存失败', e);
     }
   }
 
@@ -190,7 +200,6 @@
     <div style="color:#5ae8ff; font-weight:bold; margin-bottom:16px; border-bottom:1px dashed rgba(90,240,255,0.3); padding-bottom:8px; font-size:16px; letter-spacing:1px;">🛡️ 安全卫士 · 完整指南</div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
-      <!-- 左列 -->
       <div>
         <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避弹幕</span></div>
@@ -207,7 +216,6 @@
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">QTE</span><span class="txt">打空 Boss 血条触发覆盖码，输入 <b>6 / 8</b> 位即可处决（满血满能量 + 爆芯片）</span></div>
       </div>
 
-      <!-- 右列 -->
       <div>
         <div style="color:#5ae8ff; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 武器 · 8 种</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">⚡ 探针</span><span class="txt">直线穿透，最多穿 <b>3</b> 个敌人，每个都掉血</span></div>
@@ -240,7 +248,6 @@
     <div style="color:#ff5a7a; font-weight:bold; margin-bottom:16px; border-bottom:1px dashed rgba(255,90,122,0.3); padding-bottom:8px; font-size:16px; letter-spacing:1px;">😈 黑客入侵 · 完整指南</div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
-      <!-- 左列 -->
       <div>
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
@@ -257,7 +264,6 @@
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">QTE</span><span class="txt">打空 Boss 血条触发覆盖码，输入 <b>6 / 8</b> 位即可处决（满血满能量 + 爆芯片）</span></div>
       </div>
 
-      <!-- 右列 -->
       <div>
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 武器 · 8 种</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">💀 飞刀</span><span class="txt">一次射出 <b>3</b> 道平行激光，每道独立命中</span></div>
@@ -397,12 +403,13 @@
         }
       }
     }
+    DB.updateUpgradeUI = updateUpgradeUI; // 暴露给外部
 
     function buyUpgrade(type, maxLv) {
       const cost = getCost(type, DB.upgrades[type]);
       if (sysPoints >= cost && DB.upgrades[type] < maxLv) {
         sysPoints -= cost; DB.upgrades[type]++;
-        saveDataToCloud(); // 保存到云端
+        saveData();
         DB.sfx.chip(); updateUpgradeUI();
       }
     }
@@ -417,7 +424,6 @@
     const btnLogin = document.getElementById('btn-login');
     
     if (btnLogin) {
-      // 每次刷新 UI 时，检查是否已登录
       const updateLoginUI = () => {
         const testerPanel = document.getElementById('tester-panel');
         if (currentUsername) {
@@ -436,48 +442,44 @@
           if (testerPanel) testerPanel.style.display = 'none';
         }
       };
+      DB.updateLoginUI = updateLoginUI; // 暴露给外部
       updateLoginUI(); 
 
       // ===== 绑定测试面板的按钮事件 =====
       if (document.getElementById('test-add-pt')) {
-        document.getElementById('test-add-pt').onclick = () => { sysPoints += 10000; saveDataToCloud(); updateUpgradeUI(); };
-        document.getElementById('test-sub-pt').onclick = () => { sysPoints = Math.max(0, sysPoints - 10000); saveDataToCloud(); updateUpgradeUI(); };
-        document.getElementById('test-max-up').onclick = () => { sysPoints = 999999; DB.upgrades = { hp:99, energy:10, chip:30, weapon:10, duration:10, damage:20, crit:20 }; saveDataToCloud(); updateUpgradeUI(); };
-        document.getElementById('test-add-score').onclick = () => { highestScore += 100000; saveDataToCloud(); };
+        document.getElementById('test-add-pt').onclick = () => { sysPoints += 10000; saveData(); updateUpgradeUI(); };
+        document.getElementById('test-sub-pt').onclick = () => { sysPoints = Math.max(0, sysPoints - 10000); saveData(); updateUpgradeUI(); };
+        document.getElementById('test-max-up').onclick = () => { sysPoints = 999999; DB.upgrades = { hp:99, energy:10, chip:30, weapon:10, duration:10, damage:20, crit:20 }; saveData(); updateUpgradeUI(); };
+        document.getElementById('test-add-score').onclick = () => { highestScore += 100000; saveData(); };
         document.getElementById('test-reset-all').onclick = () => {
           if (confirm("确定要清空所有积分、最高分和升级等级吗？(已解锁的关卡进度将保留)")) {
             sysPoints = 0; 
             highestScore = 0; 
             DB.upgrades = { hp:0, energy:0, chip:0, weapon:0, duration:0, damage:0, crit:0 };
-            // 不重置 maxLevel，保留你的闯关记录
-            saveDataToCloud(); 
+            saveData(); 
             updateUpgradeUI(); 
             alert("积分与升级已重置！");
           }
         };
       };
 
-      updateLoginUI(); // 初始化时调用
-
       btnLogin.onclick = () => {
         if (currentUsername) {
-          // 如果已登录，点击则执行退出
-          if (confirm('确定要退出当前账号吗？(云端存档不受影响)')) {
+          if (confirm('确定要退出当前账号吗？(退出后将读取本地离线存档)')) {
             cloudToken = null;
             currentUsername = '';
             localStorage.removeItem('sys_auth_token');
             localStorage.removeItem('sys_auth_username');
-            // 重置本地数据和UI
-            sysPoints = 0;
-            highestScore = 0;
-            DB.upgrades = { ...defaultUpgrades };
-            updateUpgradeUI();
+            
+            // 切换回本地离线数据
+            loadLocalData();
+            
+            if (DB.updateUpgradeUI) DB.updateUpgradeUI();
             updateLoginUI();
           }
           return;
         }
 
-        // 未登录，打开弹窗
         authErr.textContent = '';
         document.getElementById('auth-user').value = '';
         document.getElementById('auth-pass').value = '';
@@ -509,15 +511,15 @@
 
           // 登录成功
           cloudToken = data.token;
-          currentUsername = u; // 记住用户名
+          currentUsername = u;
           localStorage.setItem('sys_auth_token', cloudToken);
           localStorage.setItem('sys_auth_username', currentUsername);
           
-          await syncDataFromCloud(); // 拉取云端数据
+          await syncDataFromCloud(); // 从云端拉取并覆盖内存
           
           authModal.style.display = 'none';
           updateUpgradeUI();
-          updateLoginUI(); // 更新按钮状态！
+          updateLoginUI();
           DB.sfx.clear();
         } catch (e) {
           authErr.style.color = '#ff5a7a';
@@ -529,7 +531,6 @@
       document.getElementById('btn-do-register').onclick = () => doAuth('register');
     }
 
-    // ===== 关卡选择系统 =====
     // ===== 关卡选择系统 =====
     const levelModal = document.getElementById('level-modal');
     const levelGrid = document.getElementById('level-grid');
@@ -592,7 +593,7 @@
         if (state.scene !== 'playing' || state.isPaused) return;
         state.isPaused = true;
         pauseScreen.style.display = 'flex';
-        DB.mouse.down = false; // 防止暂停时武器卡在手里
+        DB.mouse.down = false;
         DB.heldWeapon = null;
         DB.keys.clear();
       };
@@ -600,7 +601,7 @@
       btnResume.onclick = () => {
         state.isPaused = false;
         pauseScreen.style.display = 'none';
-        lastTime = performance.now(); // 重置时间戳防止跳帧
+        lastTime = performance.now();
       };
 
       btnQuit.onclick = () => {
@@ -658,7 +659,7 @@
 
   function startGame() {
     hideTitle(); resetWorld(true); 
-    state.gameMode = 'endless'; // 确保进入无尽模式
+    state.gameMode = 'endless'; 
     state.mode = currentMode; 
     state.scene = 'playing'; 
     DB.sfx.start();
@@ -666,9 +667,6 @@
 
   window.startLevel = function(lv, isNewGame = false) {
     try {
-      console.log("Starting Level:", lv, "New Game:", isNewGame);
-      
-      // 1. 清理场上的实体（怪物、子弹、武器、掉落物）
       for (const w of DB.weapons.slice()) DB.removeWeapon(w);
       DB.enemyBullets.length = 0; 
       DB.enemies.length = 0; 
@@ -676,7 +674,6 @@
       DB.particles.length = 0;
       DB.boss = null; state.qte.active = false; DB.heldWeapon = null; DB.keys.clear(); DB.mouse.down = false;
       
-      // 2. 如果是新游戏（从菜单点进来的），重置所有属性和位置
       if (isNewGame) {
         state.hpMax = 100 + (DB.upgrades.hp * 20); 
         state.hp = state.hpMax; 
@@ -685,16 +682,13 @@
         state.combo = 0; state.maxCombo = 0; state.score = 0;
         state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
         DB.player.x = W * 0.34; DB.player.y = 600; DB.player.vx = 0; DB.player.vy = 0;
-        // 【新增】新游戏时应用累计关卡奖励
         state.appliedLevelCleared = 0;
         DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
       }
-      // 如果是切关，保留 state.hp、state.mods、state.score，只补新解锁的关卡奖励
       if (!isNewGame) {
         DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
       }
       
-      // 3. 初始化关卡状态
       hideTitle();
       state.mode = currentMode;
       state.scene = 'playing';
@@ -704,7 +698,6 @@
       state.levelSubWave = 1;
       state.levelWaveBreakT = 0;
       
-      // 4. 发初始武器并刷第一波怪
       for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
       DB.spawnLevelWave(lv, 1); 
       DB.sfx.start();
@@ -729,7 +722,7 @@
     state.tutorial.hitDummy = false;
     state.tutorial.pullDist = 0;
 
-    state.energy = state.energyMax; // 方便测试大招
+    state.energy = state.energyMax;
     
     for (let i = 0; i < 3; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
     if (mode === 'defender') {
@@ -744,46 +737,38 @@
     const tut = state.tutorial;
     const p = DB.player;
 
-    // 1. 移动
     if (tut.step === 1) {
       const moved = Math.hypot(p.x - tut.startX, p.y - tut.startY);
       if (moved > 100) tut.step = 2;
     }
-    // 2. 抓取
     else if (tut.step === 2) {
       if (DB.heldWeapon) tut.step = 3;
     }
-    // 3. 瞄准/拉弓
     else if (tut.step === 3) {
       if (state.mode === 'defender') {
         if (DB.heldWeapon) {
           const dd = Math.hypot(DB.mouse.x - DB.heldWeapon.anchorX, DB.mouse.y - DB.heldWeapon.anchorY);
-          if (dd > 150) tut.step = 4; // 稍微降低拉弓判定距离
+          if (dd > 150) tut.step = 4;
         }
       } else {
         const dummy = DB.enemies.find(e => e.type === 'dummy');
         if (dummy) {
           const dist = Math.hypot(DB.mouse.x - dummy.x, DB.mouse.y - dummy.y);
-          if (dist < 250) tut.step = 4; // 稍微放宽黑客瞄准判定
+          if (dist < 250) tut.step = 4;
         }
       }
     }
-    // 4. 开火
     else if (tut.step === 4) {
       const dummy = DB.enemies.find(e => e.type === 'dummy');
-      // 只要松开鼠标，或者木桩受到伤害，立刻进下一步
       if ((!DB.mouse.down && !DB.heldWeapon) || (!dummy || dummy.hp < dummy.maxHp)) {
         tut.step = 5;
-        // 【保险】强制在玩家身边发一个芯片，防止打空或没掉芯片卡住
         DB.spawnChip(p.x + 60, p.y);
       }
     }
-    // 5. 拾取芯片
     else if (tut.step === 5) {
       if (DB.chips.length === 0) {
         tut.step = 6;
         state.energy = state.energyMax; 
-        // 刷 3 只弱怪给玩家测试 SHIFT
         for(let i=0; i<3; i++) {
            DB.enemies.push({
              type: 'drone', x: p.x + 250 + Math.random()*150, y: p.y - 100 + Math.random()*200,
@@ -793,13 +778,11 @@
         }
       }
     }
-    // 6. SHIFT 技能
     else if (tut.step === 6) {
       if (state.skillCd > 0) {
         tut.step = 7;
-        state.energy = state.energyMax; // 【保险】强制补满能量
-        DB.enemies.length = 0; // 清场
-        // 重新刷 5 只怪，保证大招有东西打
+        state.energy = state.energyMax;
+        DB.enemies.length = 0;
         for(let i=0; i<5; i++) {
            DB.enemies.push({
              type: 'drone', x: p.x + 200 + Math.random()*300, y: p.y - 150 + Math.random()*300,
@@ -809,9 +792,7 @@
         }
       }
     }
-    // 7. 大招
     else if (tut.step === 7) {
-      // 【修复】只要能量被扣除，就判定大招释放成功（防秒杀回能导致卡死）
       if (state.energy < state.energyMax) {
         tut.step = 8;
         state.flash = 1.0;
@@ -826,7 +807,6 @@
     if (state.scene !== 'playing') return;
     if (state.tutorial.active) { updateTutorial(dt); return; }
 
-    // ===== 闯关模式逻辑 =====
     if (state.gameMode === 'level') {
       if (state.levelClearT > 0) {
         state.levelClearT -= dt;
@@ -834,18 +814,16 @@
           if (state.currentLevel >= maxLevel) {
             maxLevel = state.currentLevel + 1;
             DB.maxLevel = maxLevel;
-            localStorage.setItem('sys_max_level', maxLevel);
-            saveDataToCloud();
+            saveData(); // 统一保存
             if (DB.floaters) DB.floaters.push({ text: '🔓 已解锁下一关!', x: DB.player.x, y: DB.player.y - 50, vy: -40, life: 2, maxLife: 2, color: '#ffcc00', isCrit: true });
           }
           state.hp = Math.min(state.hpMax, state.hp + 30); 
           for (let i = 0; i < 2; i++) { const w = DB.spawnWeapon('light_dart'); if (w) w.warning = 0.001; }
-          window.startLevel(state.currentLevel + 1, false); // 传入 false 保留属性
+          window.startLevel(state.currentLevel + 1, false);
         }
         return;
       }
 
-      // 关卡内波次间隔时间
       if (state.levelWaveBreakT > 0) {
         state.levelWaveBreakT -= dt;
         if (state.levelWaveBreakT <= 0) {
@@ -854,20 +832,15 @@
         return;
       }
 
-      // 场上怪物清空（【QTE 修复】QTE 激活期间不得判定通关）
-      // bossDefeated 语义：没有 Boss，或 Boss 已被彻底击杀（QTE 完成后会被置 null）
-      // 瘫痪状态（paralyzed）的 Boss 即使 hp=0 也不算"已死"，必须等玩家按完 QTE
       const bossDefeated = !DB.boss || (DB.boss.hp <= 0 && DB.boss.phase !== 'paralyzed');
 
       if (DB.enemies.length === 0 && !state.qte.active && bossDefeated) {
         if (state.levelSubWave < state.levelTotalWaves) {
-          // 还有下一波
           state.levelSubWave++;
-          state.levelWaveBreakT = 2.0; // 休息 2 秒
+          state.levelWaveBreakT = 2.0;
           state.flash = 0.3;
           DB.sfx.chip();
         } else {
-          // 整个关卡通关
           state.levelClearT = 4.0;
           state.flash = 0.5;
           DB.sfx.clear();
@@ -876,8 +849,6 @@
       return;
     }
 
-
-    // ===== 无尽模式逻辑 =====
     if (state.waveBreakT > 0) {
       state.waveBreakT -= dt;
       if (state.waveBreakT <= 0) {
@@ -937,14 +908,12 @@
       bgCtx.fillStyle = 'rgba(150, 200, 255, 0.55)'; bgCtx.shadowColor = 'rgba(90, 240, 255, 0.6)'; bgCtx.shadowBlur = 16;
 
       if (!state.tutorial.active) {
-        // ===== 关卡 UI =====
         if (state.gameMode === 'level') {
           bgCtx.fillStyle = '#ffcc00';
           bgCtx.font = 'bold 20px ui-monospace, monospace';
           bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 10;
           
-          // 【修改】显示波次进度
-          bgCtx.fillText(`LEVEL ${state.currentLevel}`, VW / 2, 46);;
+          bgCtx.fillText(`LEVEL ${state.currentLevel}`, VW / 2, 46);
           bgCtx.font = 'bold 14px ui-monospace, monospace';
           bgCtx.fillStyle = 'rgba(255, 204, 0, 0.7)';
           bgCtx.fillText(`WAVE ${state.levelSubWave} / ${state.levelTotalWaves}`, VW / 2, 70);
@@ -967,7 +936,6 @@
             bgCtx.shadowColor = '#5ee6a8'; bgCtx.shadowBlur = 20;
             bgCtx.fillText(`LEVEL ${state.currentLevel} CLEARED`, VW/2, VH/2 - 30);
             
-            // 显示本关解锁的永久奖励
             const clearReward = DB.getLevelReward(state.currentLevel);
             if (clearReward) {
               bgCtx.fillStyle = '#ffcc00';
@@ -982,7 +950,6 @@
             bgCtx.fillText('奖励已永久生效 · 准备进入下一关...', VW/2, VH/2 + 55);
           }
         } else {
-          // 只有无尽模式才画 WAVE
           bgCtx.fillText(`WAVE ${String(state.wave).padStart(2, '0')}`, VW / 2, 46);
         }
       }
@@ -993,71 +960,43 @@
         const p = DB.player;
         let title = '', desc = '';
         
-        if (tut.step === 1) { 
-           title = "第一课：移动"; 
-           desc = "使用 [W][A][S][D] 移动你的角色。"; 
-        }
-        else if (tut.step === 2) { 
-           title = "第二课：抓取武器"; 
-           desc = "将鼠标悬停在任意发光武器上，按住左键抓取。"; 
-        }
+        if (tut.step === 1) { title = "第一课：移动"; desc = "使用 [W][A][S][D] 移动你的角色。"; }
+        else if (tut.step === 2) { title = "第二课：抓取武器"; desc = "将鼠标悬停在任意发光武器上，按住左键抓取。"; }
         else if (tut.step === 3) { 
            if (state.mode === 'defender') {
-             title = "第三课：向后拉弓"; 
-             desc = "按住左键并向后拉动鼠标，拉得越满力度越大。"; 
+             title = "第三课：向后拉弓"; desc = "按住左键并向后拉动鼠标，拉得越满力度越大。"; 
            } else {
-             title = "第三课：瞄准敌人"; 
-             desc = "移动鼠标，将准星对准远处的木桩。"; 
+             title = "第三课：瞄准敌人"; desc = "移动鼠标，将准星对准远处的木桩。"; 
            }
         }
-        else if (tut.step === 4) { 
-           title = "第四课：开火！"; 
-           desc = "松开鼠标，击碎木桩！"; 
-        }
-        else if (tut.step === 5) { 
-           title = "第五课：拾取芯片"; 
-           desc = "靠近发光芯片，它会自动吸附并强化你的属性。"; 
-        }
+        else if (tut.step === 4) { title = "第四课：开火！"; desc = "松开鼠标，击碎木桩！"; }
+        else if (tut.step === 5) { title = "第五课：拾取芯片"; desc = "靠近发光芯片，它会自动吸附并强化你的属性。"; }
         else if (tut.step === 6) { 
-           title = "第六课：核心技能"; 
-           desc = "按下 [SHIFT] 释放阵营专属技能，清理眼前的敌人。"; 
-           // 画 SHIFT 键提示
+           title = "第六课：核心技能"; desc = "按下 [SHIFT] 释放阵营专属技能，清理眼前的敌人。"; 
            bgCtx.save();
            bgCtx.fillStyle = 'rgba(0,0,0,0.8)';
            bgCtx.strokeStyle = state.mode === 'defender' ? '#5ae8ff' : '#ffcc00';
            bgCtx.lineWidth = 2;
-           bgCtx.beginPath();
-           bgCtx.roundRect(VW/2 - 50, VH/2 + 40, 100, 40, 6);
+           bgCtx.beginPath(); bgCtx.roundRect(VW/2 - 50, VH/2 + 40, 100, 40, 6);
            bgCtx.fill(); bgCtx.stroke();
            bgCtx.fillStyle = state.mode === 'defender' ? '#5ae8ff' : '#ffcc00';
-           bgCtx.font = 'bold 18px monospace';
-           bgCtx.textAlign = 'center';
+           bgCtx.font = 'bold 18px monospace'; bgCtx.textAlign = 'center';
            bgCtx.fillText('SHIFT', VW/2, VH/2 + 66);
            bgCtx.restore();
         }
         else if (tut.step === 7) { 
-           title = "第七课：终极绝招"; 
-           desc = "按下数字键 [1] 释放终极技能，扫清一切！"; 
-           // 画 [1] 键提示
+           title = "第七课：终极绝招"; desc = "按下数字键 [1] 释放终极技能，扫清一切！"; 
            bgCtx.save();
            bgCtx.fillStyle = 'rgba(0,0,0,0.8)';
-           bgCtx.strokeStyle = '#ffcc00';
-           bgCtx.lineWidth = 2;
-           bgCtx.beginPath();
-           bgCtx.roundRect(VW/2 - 30, VH/2 + 40, 60, 60, 6);
+           bgCtx.strokeStyle = '#ffcc00'; bgCtx.lineWidth = 2;
+           bgCtx.beginPath(); bgCtx.roundRect(VW/2 - 30, VH/2 + 40, 60, 60, 6);
            bgCtx.fill(); bgCtx.stroke();
-           bgCtx.fillStyle = '#ffcc00';
-           bgCtx.font = 'bold 24px monospace';
-           bgCtx.textAlign = 'center';
+           bgCtx.fillStyle = '#ffcc00'; bgCtx.font = 'bold 24px monospace'; bgCtx.textAlign = 'center';
            bgCtx.fillText('1', VW/2, VH/2 + 80);
            bgCtx.restore();
         }
-        else if (tut.step === 8) { 
-           title = "教程完成！"; 
-           desc = "你已掌握所有基础操作，点击屏幕返回主菜单。"; 
-        }
+        else if (tut.step === 8) { title = "教程完成！"; desc = "你已掌握所有基础操作，点击屏幕返回主菜单。"; }
 
-        // 绘制顶部提示框
         bgCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         bgCtx.strokeStyle = state.mode === 'defender' ? '#5ae8ff' : '#ff5a7a';
         bgCtx.lineWidth = 2;
@@ -1065,18 +1004,15 @@
         
         bgCtx.shadowBlur = 0;
         bgCtx.fillStyle = state.mode === 'defender' ? '#5ae8ff' : '#ff5a7a';
-        bgCtx.font = 'bold 20px ui-monospace, monospace';
-        bgCtx.textAlign = 'center';
+        bgCtx.font = 'bold 20px ui-monospace, monospace'; bgCtx.textAlign = 'center';
         bgCtx.fillText(title, VW / 2, 135);
         
-        bgCtx.fillStyle = '#ffffff';
-        bgCtx.font = '14px ui-monospace, monospace';
+        bgCtx.fillStyle = '#ffffff'; bgCtx.font = '14px ui-monospace, monospace';
         bgCtx.fillText(desc, VW / 2, 170);
       }
 
       // ===== 正常战斗的 HUD 逻辑 =====
       if (!state.tutorial.active) {
-        const waveY = DB.boss ? 30 : 46;
         if (DB.boss) {
           const barW = 600, barH = 12; const barX = (VW - barW) / 2, barY = 46;
           bgCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'; bgCtx.strokeStyle = 'rgba(255, 90, 122, 0.5)'; bgCtx.lineWidth = 1;
@@ -1109,11 +1045,11 @@
 
         if (state.combo > 1) {
           bgCtx.save(); bgCtx.textAlign = 'left'; const scale = 1 + Math.min(0.5, state.combo * 0.02);
-          bgCtx.translate(30, 100); bgCtx.scale(scale, scale); // y 从 90 改为 100
+          bgCtx.translate(30, 100); bgCtx.scale(scale, scale);
           bgCtx.font = 'bold 32px ui-monospace, monospace'; bgCtx.fillStyle = '#ffcc00'; bgCtx.shadowColor = '#ffcc00'; bgCtx.shadowBlur = 15;
           bgCtx.fillText(`${state.combo} COMBO`, 0, 0); bgCtx.restore();
           bgCtx.save(); bgCtx.textAlign = 'left'; bgCtx.font = '14px ui-monospace, monospace'; bgCtx.fillStyle = '#ffffff';
-          bgCtx.fillText(`SCORE: ${state.score}`, 32, 125); bgCtx.restore(); // y 从 115 改为 125
+          bgCtx.fillText(`SCORE: ${state.score}`, 32, 125); bgCtx.restore();
         }
 
         if (state.waveBreakT > 0) {
@@ -1169,8 +1105,7 @@
         const mods = state.mods;
         if (mods.damage > 0 || mods.grab > 0 || mods.launch > 0 || mods.moveSpeed > 0 || mods.lifesteal > 0 || (mods.critRate || 0) > 0) {
           bgCtx.font = '11px ui-monospace, monospace'; bgCtx.textAlign = 'left'; bgCtx.shadowBlur = 0;
-          // 从底部往上排，避开左上角 COMBO 和底部终端
-          let yy = VH - 220; 
+          let yy = VH - 220;
           if (mods.damage > 0)    { bgCtx.fillStyle = '#ff7a9a'; bgCtx.fillText(`DMG +${Math.round(mods.damage * 100)}%`, 24, yy); yy += 18; }
           if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 18; }
           if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 18; }
@@ -1263,13 +1198,11 @@
       if (state.isPaused) return; 
       if (e.button !== 0) return;
       
-      // 【新增】如果点到了暂停按钮，或者鼠标在 UI 弹窗上，直接 return
       if (e.target.closest('#btn-pause')) return;
       
       if (e.target.closest('.mode-card') || e.target.closest('.title-start') || e.target.closest('#modal-layer') || e.target.closest('.title-action-btn') || e.target.closest('.tutorial-btn') || e.target.closest('#auth-modal')) { if (state.scene === 'title') return; }
 
       if (state.scene === 'title') {
-        // 如果是因为鼠标点开了关卡，不要用键盘直接开始无尽模式
         if (e.key === 'Enter' || e.key === ' ') startGame(); 
         return; 
       }
@@ -1294,12 +1227,9 @@
 
     window.addEventListener('keydown', (e) => {
       if (state.isPaused) {
-        if (e.key === 'Escape') { // 按 ESC 也能继续游戏
-           document.getElementById('btn-resume').click();
-        }
+        if (e.key === 'Escape') { document.getElementById('btn-resume').click(); }
         return; 
       }
-      // 如果正在输入框打字，或者在登录弹窗里，不触发全局按键
       if (e.target.tagName === 'INPUT' || (document.getElementById('auth-modal') && document.getElementById('auth-modal').style.display === 'flex')) return;
 
       if (state.scene === 'title') { startGame(); return; }
@@ -1471,7 +1401,6 @@
     const realDt = Math.min((now - lastTime) / 1000, 0.05); lastTime = now;
 
     try {
-      // 如果处于暂停状态，直接跳过逻辑更新，只渲染画面
       if (state.isPaused) {
         render(); 
         DB.updateHUD();
@@ -1501,7 +1430,7 @@
         const earnedPoints = Math.floor(state.score / 10);
         if (earnedPoints > 0) { sysPoints += earnedPoints; }
         
-        saveDataToCloud().catch(e => console.log(e)); 
+        saveData(); 
         showGameOver();
       }
 
@@ -1512,23 +1441,20 @@
       console.error("Game Loop Crashed:", e);
     }
     
-    // 无论是否报错，都要继续请求下一帧，保证游戏绝不卡死！
     requestAnimationFrame(frame);
   }
 
   function init() {
+    // 1. 无论如何先加载本地数据，保证断网或未登录时有数据兜底
+    loadLocalData();
+    
     initBackground(); initVignette(); DB.buildHUD(); bindTitleEvents(); resetWorld(false); bindInput();
     
-    // 尝试静默同步
+    // 2. 如果有 Token，尝试静默拉取云端覆盖
     if (cloudToken) {
       syncDataFromCloud().then(() => {
-        updateUpgradeUI();
-        // 如果你是刷新页面，重新绑定一下按钮状态
-        const btnLogin = document.getElementById('btn-login');
-        if (btnLogin && currentUsername) {
-           btnLogin.textContent = `👤 ${currentUsername} (点击退出)`;
-           btnLogin.style.borderColor = 'rgba(94,230,168,0.8)';
-        }
+        if (DB.updateUpgradeUI) DB.updateUpgradeUI();
+        if (DB.updateLoginUI) DB.updateLoginUI();
       });
     }
 

@@ -20,6 +20,7 @@
     
     skillCd: 0,       
     skillActiveT: 0,
+    hackerStealthBreak: false,
 
     // ===== 【新增】新手教程状态 =====
     tutorial: {

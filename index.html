@@ -79,6 +79,7 @@
       <div style="display: flex; gap: 16px; margin-bottom: 40px; pointer-events: auto;">
         <button class="title-action-btn" id="btn-open-rules">📖 詳細玩法说明</button>
         <button class="title-action-btn" id="btn-open-upgrades">⚙️ 系统升级</button>
+        <button class="title-action-btn" id="btn-open-leaderboard">🏆 排行榜</button>
         <button class="title-action-btn" id="btn-login" style="color: #5ee6a8; border-color: rgba(94,230,168,0.4);">👤 账号登录</button>
       </div>
 
@@ -97,6 +98,21 @@
           <div id="level-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; max-height: 60vh; overflow-y: auto;">
             <!-- JS 动态生成 50 个按钮 -->
           </div>
+        </div>
+      </div>
+
+      <!-- 排行榜弹窗 -->
+      <div id="leaderboard-modal" style="display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(5px); pointer-events: auto;">
+        <div style="background: #0c0818; border: 1px solid #ffcc00; padding: 30px; border-radius: 12px; width: 600px; max-width: 90vw;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+            <h3 style="color: #ffcc00; letter-spacing: 2px;">🏆 排行榜</h3>
+            <div id="btn-close-leaderboard" style="color: #888; cursor: pointer; font-size: 20px;">✕</div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+            <button class="upgrade-btn" id="lb-tab-endless" style="flex: 1;">无尽模式</button>
+            <button class="upgrade-btn" id="lb-tab-level" style="flex: 1;">关卡模式</button>
+          </div>
+          <div id="leaderboard-list" style="max-height: 60vh; overflow-y: auto;"></div>
         </div>
       </div>
 

@@ -373,7 +373,18 @@
     const targetRef = best.boss || best.enemy;
     let baseDmg = w.baseDamage * (1 + state.mods.damage);
     baseDmg = DB.applyVulnerable(targetRef, baseDmg);
-    const finalDmg = DB.calcWeaponDamage(baseDmg, best.x, best.y);
+    let finalDmg = DB.calcWeaponDamage(baseDmg, best.x, best.y);
+
+    if (state.mode === 'hacker' && state.skillActiveT > 0 && state.hackerStealthBreak) {
+      finalDmg *= 2;
+      state.hackerStealthBreak = false;
+      state.skillActiveT = 0;
+      if (DB.floaters) {
+        DB.floaters.push({ text: '💥 破隐一击!', x: best.x, y: best.y - 40,
+          vy: -60, life: 1.2, maxLife: 1.2, color: '#ffcc00', isCrit: true });
+      }
+      state.shake = Math.min(state.shake + 10, 30);
+    }
 
     state.hitstop = Math.max(state.hitstop, 0.06);
     state.shake   = Math.min(state.shake + 6, 25);
@@ -759,8 +770,9 @@
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       const dx = b.x - p.x, dy = b.y - p.y;
       const isShielding = state.mode === 'defender' && state.skillActiveT > 0;
+      const isStealthed = state.mode === 'hacker' && state.skillActiveT > 0;
       const hitRadius = isShielding ? 60 : p.r;
-      if (dx * dx + dy * dy < (b.r + hitRadius) * (b.r + hitRadius)) {
+      if (!isStealthed && dx * dx + dy * dy < (b.r + hitRadius) * (b.r + hitRadius)) {
         if (isShielding) { DB.enemyBullets.splice(i, 1); DB.triggerReflectBlast(b.x, b.y, b.dmg); continue; }
         else { damagePlayer(b.dmg || 10, b.x, b.y); DB.enemyBullets.splice(i, 1); continue; }
       }

@@ -131,6 +131,23 @@
     }
   }
 
+  async function submitLeaderboard(mode, score, wave, level) {
+    if (!cloudToken) return; // 未登录不记录
+    if (currentUsername === 'tester') return; // 测试账号不记录
+    try {
+      await fetch(`${API_BASE}/leaderboard/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cloudToken}`
+        },
+        body: JSON.stringify({ mode, score, wave, level })
+      });
+    } catch (e) {
+      console.error('提交排行榜失败', e);
+    }
+  }
+
   /* ==================== 音效 ==================== */
   DB.sfx = (function () {
     let ctx = null;
@@ -252,7 +269,7 @@
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">鼠标</span><span class="txt">抓取病毒，按住瞄准，松手瞬发狙击（命中第一个敌人）</span></div>
-        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">病毒引爆：清空全屏子弹，感染所有敌人连环爆炸（冷却 6 秒）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">幽灵隐身：3 秒半透明穿透弹幕，移速 +30%，破隐第一击伤害 ×2（冷却 8 秒）</span></div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">1-4</span><span class="txt">能量满时释放大招；Boss 瘫痪时输入覆盖码处决</span></div>
         
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 核心循环</div>
@@ -338,8 +355,54 @@
 
     modalClose.addEventListener('click', () => { modalLayer.style.display = 'none'; });
     modalLayer.addEventListener('click', (e) => { if (e.target === modalLayer) modalLayer.style.display = 'none'; });
-    btnOpenRules.addEventListener('click', (e) => { e.stopPropagation(); modalLayer.style.display = 'flex'; rulesPanel.style.display = 'block'; upPanel.style.display = 'none'; });
-    btnOpenUpgrades.addEventListener('click', (e) => { e.stopPropagation(); modalLayer.style.display = 'flex'; rulesPanel.style.display = 'none'; upPanel.style.display = 'block'; updateUpgradeUI(); });
+    // ===== 排行榜 =====
+    const btnOpenLeaderboard = document.getElementById('btn-open-leaderboard');
+    const leaderboardModal = document.getElementById('leaderboard-modal');
+    const leaderboardList = document.getElementById('leaderboard-list');
+    const btnCloseLeaderboard = document.getElementById('btn-close-leaderboard');
+
+    async function loadLeaderboard(mode) {
+      leaderboardList.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">加载中...</div>';
+      try {
+        const res = await fetch(`${API_BASE}/leaderboard?mode=${mode}&limit=20`);
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          leaderboardList.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">暂无记录，快去争夺榜首吧！</div>';
+          return;
+        }
+        let html = '';
+        data.forEach((row, i) => {
+          const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
+          const medalColor = i < 3 ? '#ffcc00' : '#666';
+          const value = mode === 'endless'
+            ? `<span style="color:#5ae8ff; font-weight:bold;">${row.score}</span> 分 · 第 ${row.wave} 波`
+            : `<span style="color:#5ee6a8; font-weight:bold;">第 ${row.level} 关</span>`;
+          html += `
+            <div style="display: flex; align-items: center; padding: 12px 14px; border-bottom: 1px solid rgba(90,240,255,0.1);">
+              <div style="flex: 0 0 56px; font-weight: bold; color: ${medalColor}; font-size: 16px;">${medal}</div>
+              <div style="flex: 1; color: #dff3ff; font-weight: bold;">${row.username}</div>
+              <div style="color: #aaa; font-size: 13px;">${value}</div>
+            </div>
+          `;
+        });
+        leaderboardList.innerHTML = html;
+      } catch (e) {
+        leaderboardList.innerHTML = '<div style="text-align: center; color: #ff5a7a; padding: 40px;">加载失败，请稍后重试</div>';
+      }
+    }
+
+    if (btnOpenLeaderboard && leaderboardModal) {
+      btnOpenLeaderboard.onclick = (e) => {
+        e.stopPropagation();
+        leaderboardModal.style.display = 'flex';
+        loadLeaderboard('endless');
+      };
+      if (btnCloseLeaderboard) btnCloseLeaderboard.onclick = () => { leaderboardModal.style.display = 'none'; };
+      const tabEndless = document.getElementById('lb-tab-endless');
+      const tabLevel = document.getElementById('lb-tab-level');
+      if (tabEndless) tabEndless.onclick = () => loadLeaderboard('endless');
+      if (tabLevel) tabLevel.onclick = () => loadLeaderboard('level');
+    }
 
     const pointsText = document.getElementById('sys-points-text');
     const btnHp = document.getElementById('up-hp'), btnEnergy = document.getElementById('up-energy'), btnChip = document.getElementById('up-chip');
@@ -644,7 +707,7 @@
     state.appliedLevelCleared = 0;
     state.energy = DB.upgrades.energy * 10;
     DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
-    state.skillCd = 0; state.skillActiveT = 0;
+    state.skillCd = 0; state.skillActiveT = 0; state.hackerStealthBreak = false;
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
     state.tutorial.active = false;
 
@@ -815,6 +878,7 @@
             maxLevel = state.currentLevel + 1;
             DB.maxLevel = maxLevel;
             saveData(); // 统一保存
+            submitLeaderboard('level', 0, 1, state.currentLevel);
             if (DB.floaters) DB.floaters.push({ text: '🔓 已解锁下一关!', x: DB.player.x, y: DB.player.y - 50, vy: -40, life: 2, maxLife: 2, color: '#ffcc00', isCrit: true });
           }
           state.hp = Math.min(state.hpMax, state.hp + 30); 
@@ -1096,7 +1160,7 @@
         bgCtx.font = 'bold 12px ui-monospace, monospace';
         bgCtx.shadowBlur = 0;
         const isDef = state.mode === 'defender';
-        const skillName = isDef ? '[SHIFT] 全息反射盾' : '[SHIFT] 病毒引爆';
+        const skillName = isDef ? '[SHIFT] 全息反射盾' : '[SHIFT] 幽灵隐身';
         const cdText = state.skillCd <= 0 ? 'READY' : state.skillCd.toFixed(1) + 's';
         const cdColor = state.skillCd <= 0 ? (isDef ? '#5ae8ff' : '#ffcc00') : 'rgba(150, 150, 150, 0.6)';
         bgCtx.fillStyle = cdColor;
@@ -1329,20 +1393,23 @@
     }
 
     DB.triggerShift = function() {
-      if (state.skillCd <= 0 && state.scene === 'playing') {
-        if (state.mode === 'defender') {
-          state.skillActiveT = 1.5; state.skillCd = 5.0; state.flash = Math.max(state.flash, 0.15);
-          DB.spawnParticles(DB.player.x, DB.player.y, 30, '#5ae8ff', 300); DB.sfx.chip();
-        } else {
-          DB.enemyBullets.length = 0;
-          for (const en of DB.enemies) {
-            const blastDmg = 40 + (state.wave * 5) + (state.combo * 2);
-            en.hp -= DB.applyVulnerable(en, blastDmg); en.flashT = 0.2; en.virus = true;
-            DB.spawnParticles(en.x, en.y, 15, '#ffcc00', 400);
-          }
-          if (DB.boss && DB.boss.phase === 'normal') { DB.boss.hp -= DB.applyVulnerable(DB.boss, 40 + state.wave * 5); DB.boss.flashT = 0.2; }
-          state.skillCd = 6.0; state.flash = Math.max(state.flash, 0.4); state.shake = 25; state.hitstop = 0.1; DB.sfx.error();
-        }
+      if (state.skillCd > 0 || state.scene !== 'playing') return;
+
+      if (state.mode === 'defender') {
+        state.skillActiveT = 1.5; state.skillCd = 5.0; state.flash = Math.max(state.flash, 0.15);
+        DB.spawnParticles(DB.player.x, DB.player.y, 30, '#5ae8ff', 300); DB.sfx.chip();
+        return;
+      }
+
+      state.skillActiveT = 3.0;
+      state.skillCd = 8.0;
+      state.hackerStealthBreak = true;
+      state.flash = Math.max(state.flash, 0.2);
+      DB.spawnParticles(DB.player.x, DB.player.y, 24, '#5ae8ff', 260);
+      DB.sfx.error();
+      if (DB.floaters) {
+        DB.floaters.push({ text: '🫥 幽灵隐身', x: DB.player.x, y: DB.player.y - 50,
+          vy: -40, life: 1.2, maxLife: 1.2, color: '#5ae8ff' });
       }
     };
 
@@ -1413,7 +1480,17 @@
       state.damageFlash *= Math.exp(-10 * realDt); if (state.damageFlash < 0.004) state.damageFlash = 0;
 
       if (state.skillCd > 0) state.skillCd -= realDt;
-      if (state.skillActiveT > 0) state.skillActiveT -= realDt;
+      if (state.skillActiveT > 0) {
+        state.skillActiveT -= realDt;
+        if (state.skillActiveT <= 0) {
+          state.skillActiveT = 0;
+          state.hackerStealthBreak = false;
+          if (state.mode === 'hacker' && state.scene === 'playing' && DB.floaters) {
+            DB.floaters.push({ text: '隐身结束', x: DB.player.x, y: DB.player.y - 40,
+              vy: -30, life: 0.8, maxLife: 0.8, color: '#88aaff' });
+          }
+        }
+      }
       state.bossEnrageFlash *= Math.exp(-6 * realDt); if (state.bossEnrageFlash < 0.004) state.bossEnrageFlash = 0;
       if (state.bossEnrageTextT > 0) state.bossEnrageTextT = Math.max(0, state.bossEnrageTextT - realDt);
 
@@ -1429,6 +1506,11 @@
         if (state.score > highestScore) { highestScore = state.score; }
         const earnedPoints = Math.floor(state.score / 10);
         if (earnedPoints > 0) { sysPoints += earnedPoints; }
+        
+        // 提交无尽模式排行榜
+        if (state.gameMode === 'endless' && state.score > 0) {
+          submitLeaderboard('endless', state.score, state.wave, 1);
+        }
         
         saveData(); 
         showGameOver();

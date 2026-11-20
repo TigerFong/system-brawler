@@ -18,7 +18,9 @@
     if (len > 0) { ax /= len; ay /= len; }
 
     // 【新增】移速芯片加成，封顶 +100%
-    const moveMul = Math.min(2.0, 1 + (state.mods.moveSpeed || 0));
+    const baseMoveMul = Math.min(2.0, 1 + (state.mods.moveSpeed || 0));
+    const stealthMul = (state.mode === 'hacker' && state.skillActiveT > 0) ? 1.3 : 1;
+    const moveMul = baseMoveMul * stealthMul;
     const effAccel = p.accel * moveMul;
     const effMaxSpeed = p.maxSpeed * moveMul;
 
@@ -58,7 +60,9 @@
 
     // 外发光
     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 76);
-    g.addColorStop(0, `rgba(${mainColor}, ${0.34 + pulse * 0.16})`);
+    const stealthing = isHacker && state.skillActiveT > 0;
+    const glowMul = stealthing ? 0.45 : 1;
+    g.addColorStop(0, `rgba(${mainColor}, ${(0.34 + pulse * 0.16) * glowMul})`);
     g.addColorStop(0.45, `rgba(${mainColor}, 0.10)`);
     g.addColorStop(1, `rgba(${mainColor}, 0)`);
     ctx.fillStyle = g;
@@ -93,6 +97,7 @@
 
     // 菱形本体
     ctx.save();
+    if (stealthing) ctx.globalAlpha = 0.35;
     ctx.translate(p.x, p.y);
     ctx.rotate(Math.PI / 4 + Math.sin(t * 2.1) * 0.07);
     ctx.shadowColor = shadowColor;

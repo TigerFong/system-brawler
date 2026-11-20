@@ -131,17 +131,19 @@
     }
   }
 
-  async function submitLeaderboard(mode, score, wave, level) {
-    if (!cloudToken) return; // 未登录不记录
+  async function submitLeaderboard(mode, score, wave, level, guestName) {
     if (currentUsername === 'tester') return; // 测试账号不记录
+    if (!cloudToken && !guestName) return; // 没登录也没填名字，不记录
+    
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (cloudToken) {
+        headers['Authorization'] = `Bearer ${cloudToken}`;
+      }
       await fetch(`${API_BASE}/leaderboard/submit`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cloudToken}`
-        },
-        body: JSON.stringify({ mode, score, wave, level })
+        headers: headers,
+        body: JSON.stringify({ mode, score, wave, level, guestName })
       });
     } catch (e) {
       console.error('提交排行榜失败', e);
@@ -377,10 +379,17 @@
           const value = mode === 'endless'
             ? `<span style="color:#5ae8ff; font-weight:bold;">${row.score}</span> 分 · 第 ${row.wave} 波`
             : `<span style="color:#5ee6a8; font-weight:bold;">第 ${row.level} 关</span>`;
+            
+          // 判断是否是访客（没有 user_id）
+          const isGuest = !row.user_id;
+          const nameDisplay = isGuest 
+            ? `<span style="color:#888; font-size:12px; margin-right:4px;">[访客]</span>${row.username}` 
+            : `<span style="color:#5ee6a8; font-size:12px; margin-right:4px;">[玩家]</span>${row.username}`;
+
           html += `
             <div style="display: flex; align-items: center; padding: 12px 14px; border-bottom: 1px solid rgba(90,240,255,0.1);">
               <div style="flex: 0 0 56px; font-weight: bold; color: ${medalColor}; font-size: 16px;">${medal}</div>
-              <div style="flex: 1; color: #dff3ff; font-weight: bold;">${row.username}</div>
+              <div style="flex: 1; color: #dff3ff; font-weight: bold;">${nameDisplay}</div>
               <div style="color: #aaa; font-size: 13px;">${value}</div>
             </div>
           `;
@@ -689,7 +698,62 @@
     const isNewRecord = state.score >= highestScore && state.score > 0;
     statsBox.innerHTML = `<div><span style="color:rgba(150,200,255,0.6);">本局得分</span> <span style="color:#ffcc00; font-size:24px; font-weight:bold; margin-left:40px;">${state.score}</span></div><div><span style="color:rgba(150,200,255,0.6);">最高连击</span> <span style="color:#5ae8ff; font-size:24px; font-weight:bold; margin-left:40px;">${state.maxCombo} <span style="font-size:14px;">HITS</span></span></div><div><span style="color:rgba(150,200,255,0.6);">历史最高</span> <span style="color:${isNewRecord?'#5ee6a8':'#ffffff'}; font-size:24px; font-weight:bold; margin-left:40px;">${highestScore} ${isNewRecord?'★ NEW':''}</span></div>`;
     const hint = document.createElement('div'); hint.textContent = '点击 / 按任意键 返回标题'; hint.style.cssText = 'font-size:13px;letter-spacing:2px;color:rgba(180,220,255,.6); animation: startBlink 1.5s infinite;';
-    gameOverEl.appendChild(face); gameOverEl.appendChild(title); gameOverEl.appendChild(statsBox); gameOverEl.appendChild(hint);
+
+    gameOverEl.appendChild(face); 
+    gameOverEl.appendChild(title); 
+    gameOverEl.appendChild(statsBox); 
+
+    // 访客排行榜提交框（无尽模式且有分数）
+    if (state.gameMode === 'endless' && state.score > 0 && !currentUsername) {
+      const lbSubmitBox = document.createElement('div');
+      lbSubmitBox.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 24px; pointer-events: auto;';
+      
+      const guestTip = document.createElement('div');
+      guestTip.textContent = '👤 访客模式：输入昵称即可上榜（无需登录）';
+      guestTip.style.cssText = 'font-size: 13px; color: #aaa; letter-spacing: 1px; margin-bottom: -4px;';
+
+      const inputRow = document.createElement('div');
+      inputRow.style.cssText = 'display: flex; gap: 10px;';
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = '输入访客昵称';
+      nameInput.maxLength = 12;
+      nameInput.value = localStorage.getItem('sys_guest_name') || '';
+      nameInput.style.cssText = 'padding: 8px 12px; border-radius: 4px; border: 1px solid #5ae8ff; background: rgba(0,0,0,0.5); color: #fff; font-family: monospace; font-size: 14px; outline: none; text-align: center; width: 160px;';
+      
+      const submitBtn = document.createElement('button');
+      submitBtn.textContent = '🏆 访客上榜';
+      submitBtn.style.cssText = 'padding: 8px 16px; border-radius: 4px; border: 1px solid #ffcc00; background: rgba(255,204,0,0.2); color: #ffcc00; font-family: monospace; font-size: 14px; font-weight: bold; cursor: pointer;';
+      
+      // 💡 关键修复：阻止鼠标按下事件冒泡，防止触发返回标题
+      const stopProp = (e) => e.stopPropagation();
+      nameInput.addEventListener('mousedown', stopProp);
+      nameInput.addEventListener('click', stopProp);
+      submitBtn.addEventListener('mousedown', stopProp);
+      submitBtn.addEventListener('click', stopProp);
+
+      submitBtn.onclick = (e) => {
+        e.stopPropagation();
+        const name = nameInput.value.trim();
+        if (!name) { alert('请输入访客昵称！'); return; }
+        localStorage.setItem('sys_guest_name', name);
+        submitLeaderboard('endless', state.score, state.wave, 1, name);
+        submitBtn.textContent = '✅ 已上榜';
+        submitBtn.disabled = true;
+        nameInput.disabled = true;
+        submitBtn.style.opacity = '0.5';
+        nameInput.style.opacity = '0.5';
+      };
+      
+      inputRow.appendChild(nameInput);
+      inputRow.appendChild(submitBtn);
+      lbSubmitBox.appendChild(guestTip);
+      lbSubmitBox.appendChild(inputRow);
+      gameOverEl.appendChild(lbSubmitBox);
+    }
+
+    gameOverEl.appendChild(hint);
     dom.stage.appendChild(gameOverEl); requestAnimationFrame(() => { gameOverEl.style.opacity = '1'; });
   }
   function hideGameOver() { if (gameOverEl) gameOverEl.style.opacity = '0'; }
@@ -878,7 +942,10 @@
             maxLevel = state.currentLevel + 1;
             DB.maxLevel = maxLevel;
             saveData(); // 统一保存
-            submitLeaderboard('level', 0, 1, state.currentLevel);
+            const guestName = localStorage.getItem('sys_guest_name');
+            if (cloudToken || guestName) {
+              submitLeaderboard('level', 0, 1, state.currentLevel, guestName);
+            }
             if (DB.floaters) DB.floaters.push({ text: '🔓 已解锁下一关!', x: DB.player.x, y: DB.player.y - 50, vy: -40, life: 2, maxLife: 2, color: '#ffcc00', isCrit: true });
           }
           state.hp = Math.min(state.hpMax, state.hp + 30); 

@@ -357,6 +357,11 @@
 
     modalClose.addEventListener('click', () => { modalLayer.style.display = 'none'; });
     modalLayer.addEventListener('click', (e) => { if (e.target === modalLayer) modalLayer.style.display = 'none'; });
+    
+    // ⚠️ 之前丢失的按钮绑定，补在这里
+    btnOpenRules.addEventListener('click', (e) => { e.stopPropagation(); modalLayer.style.display = 'flex'; rulesPanel.style.display = 'block'; upPanel.style.display = 'none'; });
+    btnOpenUpgrades.addEventListener('click', (e) => { e.stopPropagation(); modalLayer.style.display = 'flex'; rulesPanel.style.display = 'none'; upPanel.style.display = 'block'; updateUpgradeUI(); });
+
     // ===== 排行榜 =====
     const btnOpenLeaderboard = document.getElementById('btn-open-leaderboard');
     const leaderboardModal = document.getElementById('leaderboard-modal');

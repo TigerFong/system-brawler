@@ -19,7 +19,7 @@
 
     // 【新增】移速芯片加成，封顶 +100%
     const baseMoveMul = Math.min(2.0, 1 + (state.mods.moveSpeed || 0));
-    const stealthMul = (state.mode === 'hacker' && state.skillActiveT > 0) ? 1.3 : 1;
+    const stealthMul = (state.mode === 'hacker' && state.skillActiveT > 0) ? 1.5 : 1;
     const moveMul = baseMoveMul * stealthMul;
     const effAccel = p.accel * moveMul;
     const effMaxSpeed = p.maxSpeed * moveMul;

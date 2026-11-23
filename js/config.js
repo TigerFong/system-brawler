@@ -84,6 +84,9 @@ DB.BOSS_CFG = {
     max_hp:   { label: 'MAX+',  color: '#ffcc00', rarity: 'common', desc: '生命上限 +10 (并恢复)' },
     move:     { label: 'MOV',   color: '#7aff9a', rarity: 'common', desc: '移动速度 +6%' },   // 新增
 
+    armor:    { label: 'DEF',   color: '#aaaaff', rarity: 'common', desc: '受到伤害减少 5%' },
+    armor2:   { label: 'DEF++', color: '#ffaa00', rarity: 'rare',   desc: '受到伤害减少 12%' },
+
     // ===== Rare（蓝）：更强数值 =====
     damage2:  { label: 'DMG++', color: '#7aaaff', rarity: 'rare',   desc: '武器伤害 +12%' },
     lifesteal:{ label: 'LEECH', color: '#ff5a7a', rarity: 'rare',   desc: '击杀恢复 3 HP' },

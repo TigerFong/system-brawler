@@ -7,10 +7,9 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    // 【极限指数】1.80。第 10 波 198 倍，第 15 波 2900 倍，第 20 波 4.2 万倍！
     hpExponent:           1.75,   
-    // 伤害增长拉高，后期只要被碰一下直接大残
-    dmgExponent:          1.25,   
+    // 恢复到 1.22，让后期敌人打人再次有痛感
+    dmgExponent:          1.22,   
     
     bossDmgPerWave:       0.30,   
     bossSpeedPerWave:     0.15,   
@@ -195,6 +194,8 @@
     let floatText = '', floatColor = '#ffffff';
 
     if (c.type === 'damage')       { mods.damage += 0.05; floatText = '伤害 +5%';   floatColor = '#ff7a9a'; }
+    else if (c.type === 'armor')        { mods.armor = (mods.armor || 0) + 0.05; floatText = '减伤 +5%'; floatColor = '#aaaaff'; }
+    else if (c.type === 'armor2')       { mods.armor = (mods.armor || 0) + 0.12; floatText = '减伤 +12%'; floatColor = '#ffaa00'; }
     else if (c.type === 'grab')    { mods.grab += 15;     floatText = '范围 +15';   floatColor = '#5ae8ff'; }
     else if (c.type === 'launch')  { mods.launch += 0.05; floatText = '弹射 +5%';   floatColor = '#c08bff'; }
     else if (c.type === 'heal')    { state.hp = Math.min(state.hpMax, state.hp + 15); floatText = '+15 HP'; floatColor = '#5ee6a8'; DB.spawnParticles(p.x, p.y, 20, '#5ee6a8', 300); }
@@ -263,11 +264,21 @@
     if (state.gameOver || state.scene !== 'playing') return;
     if (state.qte.active) return; 
     
+    // ⚡ 增加 0.5 秒受击无敌帧，防止被怪海同帧瞬秒
+    if (state.playerHurtCd > 0) return;
+    state.playerHurtCd = 0.3;
+
     let finalDmg = dmg;
+    
+    // 卫士护盾减伤
     if (state.mode === 'defender' && state.skillActiveT > 0) {
       finalDmg *= 0.2; 
       DB.spawnParticles(px, py, 10, '#5ae8ff', 300); 
     }
+    
+    // 💡 护甲减伤（最高 60% 减伤封顶）
+    const armorReduction = Math.min(0.6, state.mods.armor || 0);
+    finalDmg *= (1 - armorReduction);
 
     state.hp = Math.max(0, state.hp - finalDmg);
     state.damageFlash = Math.max(state.damageFlash, finalDmg > 0 ? 0.5 : 0.1);
@@ -375,15 +386,44 @@
     baseDmg = DB.applyVulnerable(targetRef, baseDmg);
     let finalDmg = DB.calcWeaponDamage(baseDmg, best.x, best.y);
 
+    // 黑客幽灵隐身：破隐第一击必定暴击 + 范围病毒爆炸 + 击杀返CD
     if (state.mode === 'hacker' && state.skillActiveT > 0 && state.hackerStealthBreak) {
-      finalDmg *= 2;
+      finalDmg *= 2.5; // 大幅提升爆发
       state.hackerStealthBreak = false;
       state.skillActiveT = 0;
+      
+      state.shake = Math.min(state.shake + 15, 35);
+      state.hitstop = Math.max(state.hitstop, 0.1);
+      
       if (DB.floaters) {
-        DB.floaters.push({ text: '💥 破隐一击!', x: best.x, y: best.y - 40,
-          vy: -60, life: 1.2, maxLife: 1.2, color: '#ffcc00', isCrit: true });
+        DB.floaters.push({
+          text: '💥 破隐处决!', x: best.x, y: best.y - 40,
+          vy: -60, life: 1.2, maxLife: 1.2, color: '#ff2a4a', isCrit: true
+        });
       }
-      state.shake = Math.min(state.shake + 10, 30);
+
+      // 范围病毒爆炸特效（半径 200）
+      DB.spawnParticles(best.x, best.y, 40, '#ff2a4a', 800);
+      for (let k = 0; k < 24; k++) {
+        const a = (k / 24) * Math.PI * 2;
+        DB.particles.push({ x: best.x, y: best.y, vx: Math.cos(a) * 600, vy: Math.sin(a) * 600, life: 0.5, maxLife: 0.5, size: 6, color: '#ff2a4a', spin: 0, rot: a });
+      }
+
+      // 对周围敌人造成 AOE 并附加易伤
+      for (const e of DB.enemies) {
+        if (e.dead || e === best.enemy) continue;
+        if (Math.hypot(e.x - best.x, e.y - best.y) < 200) {
+          e.hp -= DB.applyVulnerable(e, finalDmg * 0.5);
+          e.flashT = 0.2;
+          e.vulnerable = Math.max(e.vulnerable || 0, 2.0); // 挂易伤
+        }
+      }
+
+      // 如果击杀了目标，减少 50% 剩余冷却
+      if ((best.enemy && best.enemy.hp <= 0) || (best.boss && best.boss.hp <= 0)) {
+        state.skillCd *= 0.5;
+        if (DB.floaters) DB.floaters.push({ text: '⚡ 击杀重置!', x: DB.player.x, y: DB.player.y - 70, vy: -40, life: 1.5, maxLife: 1.5, color: '#5ee6a8', isCrit: true });
+      }
     }
 
     state.hitstop = Math.max(state.hitstop, 0.06);
@@ -406,7 +446,10 @@
     DB.sfx.hit();
 
     if (best.boss) {
-      best.boss.hp -= finalDmg; best.boss.flashT = 0.15;
+      // 💡 防秒杀：单次最高只能打 15% 最大生命值
+      const maxDmg = best.boss.maxHp * 0.15;
+      best.boss.hp -= Math.min(finalDmg, maxDmg); 
+      best.boss.flashT = 0.15;
     } else if (best.enemy) {
       if (best.enemy.type === 'dummy') {
         state.tutorial.hitDummy = true;
@@ -504,6 +547,9 @@
 
   DB.updateEnemies = function (dt) {
     const p = DB.player;
+    
+    // 递减受击无敌时间
+    if (state.playerHurtCd > 0) state.playerHurtCd -= dt;
 
     for (let i = DB.enemies.length - 1; i >= 0; i--) {
       const e = DB.enemies[i];
@@ -517,6 +563,8 @@
 
     if (DB.boss) {
       const b = DB.boss;
+
+      if (b.hp <= 0 && b.phase !== 'paralyzed') DB.triggerQTE(b);
       if (b.hp <= 0 && b.phase !== 'paralyzed') DB.triggerQTE(b);
       if (b.flashT > 0) b.flashT -= dt;
       
@@ -525,7 +573,7 @@
         state.bossEnrageFlash = 0.8; state.bossEnrageTextT = 2.5;
         state.shake = 30; state.flash = Math.max(state.flash, 0.35); state.hitstop = Math.max(state.hitstop, 0.12);
         const burstCount = b.isBig ? 16 : 12;
-        const burstDmg = b.isBig ? 14 : 10;
+        const burstDmg = b.isBig ? 30 : 20;
         for (let i = 0; i < burstCount; i++) {
           const a = (i / burstCount) * Math.PI * 2;
           DB.enemyBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, r: 7, life: 6, color: '#ff2a4a', dmg: burstDmg });
@@ -548,7 +596,7 @@
 
         const waveScale  = 1 + (state.wave - 1) * G.bossDmgPerWave;
         const speedScale = 1 + (state.wave - 1) * G.bossSpeedPerWave;
-        const bossDmg    = Math.floor(20 * waveScale * (enrage ? 1.1 : 1));
+        const bossDmg    = Math.floor(45 * waveScale * (enrage ? 1.2 : 1));
         const enSpd = enrage ? 1.15 : 1;
         const enCnt = enrage ? 1.15 : 1;
         const enRate = enrage ? 0.75 : 1;
@@ -679,9 +727,10 @@
         const speed = (e.speed || DB.ENEMY_CFG.wormSpeed) * (1 + Math.sin(e.phase) * 0.15) * speedMult;
         e.x += (dx / d) * speed * dt; e.y += (dy / d) * speed * dt;
         if (d < e.r + p.r) {
-          if (state.mode === 'defender' && state.skillActiveT > 0) { DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 99999; } 
+          if (state.mode === 'hacker' && state.skillActiveT > 0) { /* 隐身穿透，无伤 */ }
+          else if (state.mode === 'defender' && state.skillActiveT > 0) { DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 99999; } 
           else { damagePlayer(e.dmg, e.x, e.y); }
-          killEnemy(i);
+          if (!(state.mode === 'hacker' && state.skillActiveT > 0)) killEnemy(i);
         }
       }
       else if (e.type === 'shield') {
@@ -692,7 +741,9 @@
         if (e.hitCd === undefined) e.hitCd = 0;
         if (e.hitCd > 0) e.hitCd -= dt;
         if (d < e.r + p.r && e.hitCd <= 0) {
-          if (state.mode === 'defender' && state.skillActiveT > 0) {
+          if (state.mode === 'hacker' && state.skillActiveT > 0) {
+            // 隐身穿透
+          } else if (state.mode === 'defender' && state.skillActiveT > 0) {
             DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 500; if (e.hp <= 0) killEnemy(i);
           } else { damagePlayer(e.dmg, e.x, e.y); }
           e.hitCd = 1.0;
@@ -733,7 +784,9 @@
           e.x += e.dashDirX * dashSpeed * dt; e.y += e.dashDirY * dashSpeed * dt;
           const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy);
           if (d < e.r + p.r) {
-            if (state.mode === 'defender' && state.skillActiveT > 0) {
+            if (state.mode === 'hacker' && state.skillActiveT > 0) {
+               // 隐身穿透
+            } else if (state.mode === 'defender' && state.skillActiveT > 0) {
                DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 99999; killEnemy(i);
             } else { damagePlayer(e.dmg, e.x, e.y); }
             e.state = 'recover'; e.stateT = 0;
@@ -758,9 +811,10 @@
         e.x += (dx / d) * moveSpeed * dt; e.y += (dy / d) * moveSpeed * dt;
         e.x += Math.sin(state.t * 2 + e.seed) * 18 * dt; e.y += Math.cos(state.t * 1.5 + e.seed) * 18 * dt;
         if (d < e.r + p.r) {
-          if (state.mode === 'defender' && state.skillActiveT > 0) { DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 99999; } 
+          if (state.mode === 'hacker' && state.skillActiveT > 0) { /* 隐身穿透，无伤 */ }
+          else if (state.mode === 'defender' && state.skillActiveT > 0) { DB.triggerReflectBlast(e.x, e.y, e.dmg); e.hp -= 99999; } 
           else { damagePlayer(e.dmg, e.x, e.y); }
-          killEnemy(i);
+          if (!(state.mode === 'hacker' && state.skillActiveT > 0)) killEnemy(i);
         }
       }
     }
@@ -804,7 +858,8 @@
           let dmgBase = w.baseDamage * power * (1 + state.mods.damage);
           dmgBase = DB.applyVulnerable(b, dmgBase);
           const hitDmg = DB.calcWeaponDamage(dmgBase, b.x, b.y);
-          b.hp -= hitDmg;
+          // 💡 防秒杀限制
+          b.hp -= Math.min(hitDmg, b.maxHp * 0.15);
           state.hitstop = Math.max(state.hitstop, 0.05); DB.sfx.hit(); DB.removeWeapon(w);
           hit = true;
           if (b.hp <= 0) DB.triggerQTE(b);
@@ -1234,8 +1289,11 @@
         for (let i = 0; i < wave * 2; i++) spawn('shield', 400 + Math.random()*300, (Math.random()-0.5)*300);
       } else {
         DB.spawnBoss(true);
-        // Boss 血量随关卡指数级成长
-        if (DB.boss) { DB.boss.hp *= (1 + Math.pow(lv/10, 1.5)); DB.boss.maxHp = DB.boss.hp; }
+        if (DB.boss) { 
+          // 改回线性温和增长：20关大约是 10关的 4 倍血量，不再指数爆炸
+          DB.boss.hp *= (1 + (lv - 10) * 0.4); 
+          DB.boss.maxHp = DB.boss.hp; 
+        }
       }
       return;
     } 
@@ -1246,7 +1304,10 @@
         for (let i = 0; i < wave; i++) spawn('turret', 500 + Math.random()*200, 0);
       } else {
         DB.spawnBoss(false);
-        if (DB.boss) { DB.boss.hp *= (1 + lv/20); DB.boss.maxHp = DB.boss.hp; }
+        if (DB.boss) { 
+          DB.boss.hp *= (1 + (lv - 5) * 0.3); 
+          DB.boss.maxHp = DB.boss.hp; 
+        }
       }
       return;
     }

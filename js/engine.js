@@ -271,7 +271,7 @@
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-bottom:10px; opacity:.85;">// 操作</div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">WASD</span><span class="txt">移动走位，躲避杀毒软件</span></div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">鼠标</span><span class="txt">抓取病毒，按住瞄准，松手瞬发狙击（命中第一个敌人）</span></div>
-        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">幽灵隐身：3 秒半透明穿透弹幕，移速 +30%，破隐第一击伤害 ×2（冷却 8 秒）</span></div>
+        <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">SHIFT</span><span class="txt">幽灵隐身：3 秒绝对无敌，移速 +50%，破隐一击必定暴击并引发范围爆炸，若击杀则返还 50% 冷却（冷却 8 秒）</span></div>
         <div class="rule-row" style="margin-bottom:8px;"><span class="key" style="flex:0 0 64px;">1-4</span><span class="txt">能量满时释放大招；Boss 瘫痪时输入覆盖码处决</span></div>
         
         <div style="color:#ff5a7a; font-size:12px; letter-spacing:2px; font-weight:bold; margin-top:20px; margin-bottom:10px; opacity:.85;">// 核心循环</div>
@@ -772,11 +772,12 @@
     state.hpMax = 100 + (DB.upgrades.hp * 20); state.hp = state.hpMax;
     state.wave = 1; state.waveBreakT = 0; state.damageFlash = 0; state.shake = 0; state.flash = 0; state.hitstop = 0; state.gameOverLock = 0;
     state.bossEnrageFlash = 0; state.bossEnrageTextT = 0;
-    state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
+    state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0, armor: 0 }; state.combo = 0; state.maxCombo = 0; state.score = 0;
     state.appliedLevelCleared = 0;
     state.energy = DB.upgrades.energy * 10;
     DB.applyLevelRewards(state, Math.max(0, (DB.maxLevel || 1) - 1));
     state.skillCd = 0; state.skillActiveT = 0; state.hackerStealthBreak = false;
+    state.playerHurtCd = 0; // 重置受击无敌帧
     state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
     state.tutorial.active = false;
 
@@ -810,7 +811,7 @@
         state.hpMax = 100 + (DB.upgrades.hp * 20); 
         state.hp = state.hpMax; 
         state.energy = DB.upgrades.energy * 10;
-        state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0 };
+        state.mods = { damage: 0, grab: 0, launch: 0, lifesteal: 0, moveSpeed: 0, critRate: 0, critDmg: 0, armor: 0 };
         state.combo = 0; state.maxCombo = 0; state.score = 0;
         state.camera.x = W / 2 - VW / 2; state.camera.y = H / 2 - VH / 2;
         DB.player.x = W * 0.34; DB.player.y = 600; DB.player.vx = 0; DB.player.vy = 0;
@@ -1246,7 +1247,7 @@
           if (mods.grab > 0)      { bgCtx.fillStyle = '#5ae8ff'; bgCtx.fillText(`RNG +${Math.round(mods.grab)}`, 24, yy); yy += 18; }
           if (mods.launch > 0)    { bgCtx.fillStyle = '#c08bff'; bgCtx.fillText(`SPD +${Math.round(mods.launch * 100)}%`, 24, yy); yy += 18; }
           if (mods.moveSpeed > 0) { bgCtx.fillStyle = '#7aff9a'; bgCtx.fillText(`MOV +${Math.round(Math.min(1, mods.moveSpeed) * 100)}%`, 24, yy); yy += 18; }
-          if (mods.lifesteal > 0) { bgCtx.fillStyle = '#ff5a7a'; bgCtx.fillText(`LEECH +${mods.lifesteal}`, 24, yy); yy += 18; }
+          if (mods.armor > 0)     { bgCtx.fillStyle = '#aaaaff'; bgCtx.fillText(`DEF +${Math.round(mods.armor * 100)}%`, 24, yy); yy += 18; }
           const rawCritRate = 15 + Math.round((mods.critRate || 0) * 100);
           const totalCritRate = Math.min(80, rawCritRate);
           const isCritMax = rawCritRate >= 80 ? ' (MAX)' : '';
@@ -1480,7 +1481,7 @@
       DB.spawnParticles(DB.player.x, DB.player.y, 24, '#5ae8ff', 260);
       DB.sfx.error();
       if (DB.floaters) {
-        DB.floaters.push({ text: '🫥 幽灵隐身', x: DB.player.x, y: DB.player.y - 50,
+        DB.floaters.push({ text: '🫥 相位穿梭 (无敌)', x: DB.player.x, y: DB.player.y - 50,
           vy: -40, life: 1.2, maxLife: 1.2, color: '#5ae8ff' });
       }
     };

@@ -416,7 +416,10 @@
       }
     }
     if (DB.boss && DB.boss.phase === 'normal') {
-      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) DB.boss.hp -= DB.applyVulnerable(DB.boss, dmg * 2);
+      if (Math.hypot(DB.boss.x - cx, DB.boss.y - cy) < 300) {
+        const maxDmg = DB.boss.maxHp * 0.05; // 场地伤害单次最多 5%
+        DB.boss.hp -= Math.min(DB.applyVulnerable(DB.boss, dmg * 2), maxDmg);
+      }
     }
     for (let i = 0; i < 40; i++) {
       const a = Math.random() * Math.PI * 2;

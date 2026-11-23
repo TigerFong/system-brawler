@@ -86,15 +86,22 @@
     const minY = DB.clamp(camY - 100, CFG.PLAY_TOP, CFG.GROUND_Y);
     const maxY = DB.clamp(camY + CFG.VIEW_H, CFG.PLAY_TOP, CFG.GROUND_Y);
 
-    const hpMult      = Math.pow(G.hpExponent, n - 1);
-    const waveDmgMult = Math.pow(G.dmgExponent, n - 1);
+    // 🌟 新手福利期：前 10 波按比例削弱
+    const isEarly = n <= 10;
+    const earlyHpNerf = isEarly ? 0.5 : 1.0;     // 前 10 波血量减半
+    const earlyDmgNerf = isEarly ? 0.6 : 1.0;    // 前 10 波伤害降 40%
+    
+    // 前 10 波使用平方根曲线，平滑过渡；10 波后回到硬核指数曲线
+    const hpMult      = (isEarly ? Math.pow(1.3, n - 1) : Math.pow(G.hpExponent, n - 1)) * earlyHpNerf;
+    const waveDmgMult = (isEarly ? Math.pow(1.1, n - 1) : Math.pow(G.dmgExponent, n - 1)) * earlyDmgNerf;
 
-    const droneCount    = 2 + Math.floor(n / G.droneCountDiv);
-    const wormCount     = 1 + Math.floor(n / G.wormCountDiv);
-    const shieldCount   = 1 + Math.floor(n / G.shieldCountDiv);
-    const turretCount   = n >= 3 ? 1 + Math.floor((n - 3) / G.turretCountDiv) : 0;
-    const chargerCount  = n >= 4 ? 1 + Math.floor((n - 4) / G.chargerCountDiv) : 0;
-    const splitterCount = n >= 5 ? 1 + Math.floor((n - 5) / G.splitterCountDiv) : 0;
+    // 前 10 波数量减少，且延迟高威胁怪物的出场时间
+    const droneCount    = 2 + Math.floor(n / (isEarly ? 2.5 : G.droneCountDiv));
+    const wormCount     = n >= 3 ? (isEarly ? 1 : 1 + Math.floor(n / G.wormCountDiv)) : 0;
+    const shieldCount   = n >= 5 ? (isEarly ? 1 : 1 + Math.floor(n / G.shieldCountDiv)) : 0;
+    const turretCount   = n >= (isEarly ? 6 : 3) ? (isEarly ? 1 : 1 + Math.floor((n - 3) / G.turretCountDiv)) : 0;
+    const chargerCount  = n >= (isEarly ? 8 : 4) ? (isEarly ? 1 : 1 + Math.floor((n - 4) / G.chargerCountDiv)) : 0;
+    const splitterCount = n >= (isEarly ? 10 : 5) ? (isEarly ? 1 : 1 + Math.floor((n - 5) / G.splitterCountDiv)) : 0;
 
     for (let i = 0; i < droneCount; i++) {
       const x = minX + Math.random() * (maxX - minX);
@@ -1246,9 +1253,15 @@
     DB.enemyBullets.length = 0;
     const p = DB.player;
     
-    // 动态难度缩放（上不封顶，每关血量 +35%）
-    const hpScale = 1 + (lv - 1) * 0.35 + (wave - 1) * 0.15;
-    const dmgScale = 1 + (lv - 1) * 0.25;
+    // 🌟 关卡新手保护：前 10 关各项数值大幅降低
+    const isEarlyLv = lv <= 10;
+    const hpScale = isEarlyLv 
+      ? (1 + (lv - 1) * 0.15 + (wave - 1) * 0.05)   // 前 10 关每关仅 +15% 血量
+      : (1 + (lv - 1) * 0.40 + (wave - 1) * 0.15);  // 10 关后恢复硬核 +40%
+      
+    const dmgScale = isEarlyLv 
+      ? (1 + (lv - 1) * 0.10)                       // 前 10 关伤害仅 +10%
+      : (1 + (lv - 1) * 0.30);                      // 10 关后伤害 +30%
 
     function spawn(type, xOffset, yOffset, customHp, extra = {}) {
       const defs = {
@@ -1290,8 +1303,8 @@
       } else {
         DB.spawnBoss(true);
         if (DB.boss) { 
-          // 改回线性温和增长：20关大约是 10关的 4 倍血量，不再指数爆炸
-          DB.boss.hp *= (1 + (lv - 10) * 0.4); 
+          // 第 10 关作为首个大 Boss，血量只有原本的 70%
+          DB.boss.hp *= (lv === 10 ? 0.7 : (1 + (lv - 10) * 0.4)); 
           DB.boss.maxHp = DB.boss.hp; 
         }
       }
@@ -1305,7 +1318,8 @@
       } else {
         DB.spawnBoss(false);
         if (DB.boss) { 
-          DB.boss.hp *= (1 + (lv - 5) * 0.3); 
+          // 第 5 关首个 Boss 只有一半血，避免新手打太久
+          DB.boss.hp *= (lv === 5 ? 0.5 : (1 + (lv - 5) * 0.3)); 
           DB.boss.maxHp = DB.boss.hp; 
         }
       }
@@ -1320,8 +1334,10 @@
     if (lv >= 12) pool.push('turret');
     if (lv >= 15) pool.push('splitter');
 
-    // 每波刷怪数量随波次和关卡数增加，最高 25 只防卡死
-    let count = Math.min(25, 3 + wave * 2 + Math.floor(lv / 2));
+    // 前 10 关数量压低（4 ~ 10 只），第 10 关后放开
+    let count = isEarlyLv 
+      ? Math.min(12, 3 + wave * 1 + Math.floor(lv / 3)) 
+      : Math.min(25, 3 + wave * 2 + Math.floor(lv / 2));
 
     for (let i = 0; i < count; i++) {
       const type = pool[Math.floor(Math.random() * pool.length)];

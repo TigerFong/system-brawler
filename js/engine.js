@@ -981,6 +981,8 @@
           state.levelClearT = 4.0;
           state.flash = 0.5;
           DB.sfx.clear();
+          // 🌟 前 3 关通关波次时回满血，让新手无压力
+          if (state.currentLevel <= 3) state.hp = state.hpMax;
         }
       }
       return;

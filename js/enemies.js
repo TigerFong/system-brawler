@@ -7,7 +7,7 @@
   const H     = CFG.H;
 
   DB.GROWTH = {
-    hpExponent:           1.75,   
+    hpExponent:           1.65,   
     // 恢复到 1.22，让后期敌人打人再次有痛感
     dmgExponent:          1.22,   
     

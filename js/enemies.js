@@ -23,7 +23,7 @@
     
     bossBulletDivDefault: 1.5,     
     bossBulletDivFirewall: 2,     
-    bossSummonDiv:        2       
+    bossSummonDiv:        1.2       
   };
   const G = DB.GROWTH;
 
